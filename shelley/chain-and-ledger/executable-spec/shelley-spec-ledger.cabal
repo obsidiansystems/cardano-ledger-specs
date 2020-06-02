@@ -113,7 +113,7 @@ library
 
 test-suite shelley-spec-ledger-test
     type:                exitcode-stdio-1.0
-    main-is:             Tests.hs
+    main-is:             Criterion.hs
     other-modules:       Test.Shelley.Spec.Ledger.Orphans
                          Test.Shelley.Spec.Ledger.Utils
                          Test.Cardano.Crypto.VRF.Fake
@@ -203,4 +203,5 @@ test-suite shelley-spec-ledger-test
       tasty-hunit,
       tasty-quickcheck,
       text,
-      transformers
+      transformers,
+      criterion
