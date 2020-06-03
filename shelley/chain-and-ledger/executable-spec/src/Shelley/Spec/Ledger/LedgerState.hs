@@ -41,6 +41,7 @@ module Shelley.Spec.Ledger.LedgerState
     emptyAccount,
     emptyPState,
     emptyDState,
+    emptyDPState,
 
     -- * state transitions
     emptyDelegation,
@@ -434,6 +435,9 @@ emptyDState =
 emptyPState :: PState crypto
 emptyPState =
   PState (StakePools Map.empty) Map.empty Map.empty Map.empty
+
+emptyDPState :: DPState crypto
+emptyDPState = DPState emptyDState emptyPState
 
 -- | Clear the protocol parameter updates
 clearPpup ::

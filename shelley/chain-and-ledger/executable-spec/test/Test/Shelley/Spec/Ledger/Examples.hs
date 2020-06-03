@@ -38,6 +38,7 @@ module Test.Shelley.Spec.Ledger.Examples
     ex6BExpectedNES',
     ex6BPoolParams,
     test5D,
+    ppsEx1,
     -- key pairs and example addresses
     alicePay,
     aliceStake,
