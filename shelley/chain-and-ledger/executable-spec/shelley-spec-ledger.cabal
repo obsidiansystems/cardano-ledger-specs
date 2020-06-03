@@ -81,6 +81,7 @@ library
     -Wincomplete-uni-patterns
     -Wredundant-constraints
     -Wpartial-fields
+
   if (!flag(development))
     ghc-options:
       -Werror
@@ -211,8 +212,8 @@ benchmark mainbench
   hs-source-dirs:   bench
   main-is:          Bench1.hs
   build-depends:    base,
-                    shelley-spec-ledger,
                     shelley-spec-ledger-test,
+                    shelley-spec-ledger,
                     QuickCheck,
                     tasty-quickcheck,
                     tasty-hunit,
