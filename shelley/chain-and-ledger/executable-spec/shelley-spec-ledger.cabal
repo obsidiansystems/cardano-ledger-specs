@@ -216,4 +216,4 @@ benchmark mainbench
                     MonadRandom
   ghc-options:      -Wall
                     -O2
-  default-language: Haskell2010
+  -- default-language: Haskell2010
