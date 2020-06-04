@@ -6,60 +6,6 @@ module Main where
 import Criterion.Main (defaultMain, whnf, bgroup, bench)
 import Test.Shelley.Spec.Ledger.BenchFuns(ledgerBench1)
 
-{-
-import Test.Tasty.HUnit (Assertion, (@?=))
-import Test.Shelley.Spec.Ledger.Utils (runShelleyBase)
-import Control.State.Transition.Extended (PredicateFailure, TRC (..), applySTS)
-import Control.State.Transition.Trace ((.-), (.->), checkTrace)
-import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (LedgerEnv, UTxOState, Tx, TxOut, DPState, LEDGER)
-import Test.Shelley.Spec.Ledger.Examples ( aliceAddr, txEx2A, ppsEx1)
-
-
-import Shelley.Spec.Ledger.PParams (emptyPPPUpdates)
-import Shelley.Spec.Ledger.LedgerState (genesisCoins, emptyDPState, pattern UTxOState)
-import Shelley.Spec.Ledger.TxData (pattern TxOut)
--- import Shelley.Spec.Ledger.Tx (pattern Tx)
-import Shelley.Spec.Ledger.Coin (Coin (..))
-import Shelley.Spec.Ledger.Slot (SlotNo (..))
-import Shelley.Spec.Ledger.STS.Ledger (pattern LedgerEnv)
-
-
-coins :: Integer -> [TxOut]
-coins n = fmap (\x -> TxOut aliceAddr (Coin $ 100+x)) [0..n]
-
-utxoState :: Integer -> UTxOState
-utxoState _n =
-  UTxOState
-    ( genesisCoins (coins _n) )
-    (Coin 0)
-    (Coin 0)
-    emptyPPPUpdates
-
-
-ledgerEnv :: LedgerEnv
-ledgerEnv = LedgerEnv (SlotNo 0) 0 ppsEx1 0
-
-
-testLEDGER :: (UTxOState, DPState)
-                    -> Tx
-                    -> LedgerEnv
-                    -> Either
-                         [[PredicateFailure LEDGER]]
-                         (UTxOState, DPState)
-                    -> Assertion
-
-
-testLEDGER initSt tx env (Right expectedSt) = do
-  checkTrace @LEDGER runShelleyBase env $ pure initSt .- tx .-> expectedSt
-testLEDGER initSt tx env predicateFailure@(Left _) = do
-  let st = runShelleyBase $ applySTS @LEDGER (TRC (env, initSt, tx))
-  st @?= predicateFailure
-
-
-ledger :: Integer -> Assertion
-ledger _n = testLEDGER (utxoState _n, emptyDPState) txEx2A ledgerEnv (Left [])
--}
-
 -- The function we're benchmarking.
 fib:: Int -> Int
 fib m | m < 0     = error "negative!"
@@ -78,12 +24,10 @@ main = defaultMain [
               -- , bench "9"  $ whnf fib 9
               -- , bench "11" $ whnf fib 11
                ]
-  , bgroup "ledger"
-      [ bench "4"  $ whnf ledgerBench1 4
-      , bench "40"  $ whnf ledgerBench1 40
-      , bench "400"  $ whnf ledgerBench1 400
-      , bench "4000"  $ whnf ledgerBench1 4000
-      ]
+  , bgroup "ledger" $
+      fmap
+      (\n -> bench (show n) $ whnf ledgerBench1 n)
+      [50, 500, 5000, 50000]
   ]
 
 
