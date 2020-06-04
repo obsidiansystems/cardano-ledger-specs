@@ -2,8 +2,11 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Main where
-import Criterion.Main (defaultMain, whnf, bgroup, bench)
 
+import Criterion.Main (defaultMain, whnf, bgroup, bench)
+import Test.Shelley.Spec.Ledger.BenchFuns(ledgerBench1)
+
+{-
 import Test.Tasty.HUnit (Assertion, (@?=))
 import Test.Shelley.Spec.Ledger.Utils (runShelleyBase)
 import Control.State.Transition.Extended (PredicateFailure, TRC (..), applySTS)
@@ -55,7 +58,7 @@ testLEDGER initSt tx env predicateFailure@(Left _) = do
 
 ledger :: Integer -> Assertion
 ledger _n = testLEDGER (utxoState _n, emptyDPState) txEx2A ledgerEnv (Left [])
-
+-}
 
 -- The function we're benchmarking.
 fib:: Int -> Int
@@ -71,11 +74,16 @@ fib m | m < 0     = error "negative!"
 main :: IO ()
 main = defaultMain [
   bgroup "fib" [ bench "1"  $ whnf fib 1
-               , bench "5"  $ whnf fib 5
-               , bench "9"  $ whnf fib 9
-               , bench "11" $ whnf fib 11
+              -- , bench "5"  $ whnf fib 5
+              -- , bench "9"  $ whnf fib 9
+              -- , bench "11" $ whnf fib 11
                ]
-  , bgroup "ledger" [ bench "4"  $ whnf ledger 4]
+  , bgroup "ledger"
+      [ bench "4"  $ whnf ledgerBench1 4
+      , bench "40"  $ whnf ledgerBench1 40
+      , bench "400"  $ whnf ledgerBench1 400
+      , bench "4000"  $ whnf ledgerBench1 4000
+      ]
   ]
 
 

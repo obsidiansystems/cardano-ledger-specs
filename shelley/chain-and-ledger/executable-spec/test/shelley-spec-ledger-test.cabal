@@ -17,6 +17,7 @@ flag development
 
 library
   exposed-modules:   Test.Cardano.Crypto.VRF.Fake
+                     Test.Shelley.Spec.Ledger.BenchFuns
                      Test.Shelley.Spec.Ledger.ConcreteCryptoTypes
                      Test.Shelley.Spec.Ledger.Examples
                      Test.Shelley.Spec.Ledger.Generator.Block
