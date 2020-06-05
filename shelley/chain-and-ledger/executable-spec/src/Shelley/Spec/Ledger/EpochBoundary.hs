@@ -82,6 +82,8 @@ getStakeHK _ = Nothing
 aggregateOuts :: UTxO crypto -> Map (Addr crypto) Coin
 aggregateOuts (UTxO u) =
   Map.fromListWith (+) (map (\(_, TxOut a c) -> (a, c)) $ Map.toList u)
+  -- Map.foldr (\ (TxOut a c) m -> Map.insertWith (+) a c m) Map.empty u
+  -- Tim Sheard suggests this, measurements make it a tiny bit faster, might not be worth it.
 
 -- | Get Stake of base addresses in TxOut set.
 baseStake ::
