@@ -209,11 +209,29 @@ test-suite shelley-spec-ledger-test
 
 benchmark mainbench
   type:             exitcode-stdio-1.0
-  hs-source-dirs:   bench
+  hs-source-dirs:   bench,
+                    test
   main-is:          Bench1.hs
+  other-modules:    Test.Shelley.Spec.Ledger.BenchFuns,
+                    Test.Shelley.Spec.Ledger.ConcreteCryptoTypes,
+                    Test.Shelley.Spec.Ledger.Examples,
+                    Test.Shelley.Spec.Ledger.Generator.Constants,
+                    Test.Shelley.Spec.Ledger.Generator.Core,
+                    Test.Shelley.Spec.Ledger.Utils,
+                    Test.Cardano.Crypto.VRF.Fake
   build-depends:    base,
-                    shelley-spec-ledger-test,
+                    -- shelley-spec-ledger-test,
                     shelley-spec-ledger,
+                    cardano-binary,
+                    cardano-crypto,
+                    cardano-crypto-class,
+                    cardano-prelude,
+                    cardano-slotting,
+                    cryptonite,
+                    transformers,
+                    bytestring,
+                    bytestring-conversion,
+                    hedgehog,
                     QuickCheck,
                     tasty-quickcheck,
                     tasty-hunit,

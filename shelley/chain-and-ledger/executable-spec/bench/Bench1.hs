@@ -27,7 +27,7 @@ main = defaultMain [
   , bgroup "ledger" $
       fmap
       (\n -> bench (show n) $ whnf ledgerBench1 n)
-      [50, 500, 5000, 50000]
+      [50, 500,  5000, 50005]
   ]
 
 
