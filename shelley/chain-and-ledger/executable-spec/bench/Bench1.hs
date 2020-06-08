@@ -18,17 +18,25 @@ fib m | m < 0     = error "negative!"
 
 -- Our benchmark harness.
 main :: IO ()
+main = do
+   putStrLn "STARTING"
+   putStrLn( show (ledgerBench1(5000)))
+   putStrLn "FINISHED"
+
+{-
 main = defaultMain [
-  bgroup "fib" [ bench "1"  $ whnf fib 1
+  {-
+   bgroup "fib" [ bench "1"  $ whnf fib 1
               -- , bench "5"  $ whnf fib 5
               -- , bench "9"  $ whnf fib 9
               -- , bench "11" $ whnf fib 11
                ]
-  , bgroup "ledger" $
+  , -}  bgroup "ledger" $
       fmap
       (\n -> bench (show n) $ whnf ledgerBench1 n)
-      [50, 500,  5000, 50005]
+      [50,  500, 5000, 50000,500000]
   ]
+-}
 
 
 -- =======================================================

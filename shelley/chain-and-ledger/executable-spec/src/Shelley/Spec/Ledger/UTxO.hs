@@ -264,7 +264,9 @@ scriptsNeeded u tx =
   where
     unTxOut (TxOut a _) = a
     withdrawals = unWdrl $ _wdrls $ _body tx
-    UTxO u'' = txinsScript (txins $ _body tx) u <| u
+    UTxO u'' = txinsScript (txins $ _body tx) u  <| u
+    -- s ◁ r = Set.filter (\(k,_) -> k `Set.member` toSet s) r
+
     certificates = (toList . _certs . _body) tx
 
 -- | Compute the subset of inputs of the set 'txInps' for which each input is
@@ -284,3 +286,10 @@ txinsScript txInps (UTxO u) =
           )
           u
       )
+{-
+-- we need to address the filter
+txinsScript txInps (UTxO u) = foldr ok Set.empty txInps
+    where ok input ans = case Map.lookup input u of
+                           Just _ -> Set.insert input ans
+                           Nothing -> ans
+-{
