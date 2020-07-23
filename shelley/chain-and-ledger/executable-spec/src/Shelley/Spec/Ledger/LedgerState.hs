@@ -150,10 +150,11 @@ import Shelley.Spec.Ledger.EpochBoundary
     SnapShot (..),
     SnapShots (..),
     Stake (..),
-    aggregateOuts,
-    baseStake,
+    -- aggregateOuts,
+    aggregateStakes,
+    -- baseStake,
     emptySnapShots,
-    ptrStake,
+    -- ptrStake,
     rewardStake,
   )
 import Shelley.Spec.Ledger.Keys
@@ -938,9 +939,10 @@ stakeDistr u ds ps =
   where
     DState (StakeCreds stkcreds) rewards' delegs ptrs' _ _ _ = ds
     PState (StakePools stpools) poolParams _ _ = ps
-    outs = aggregateOuts u
+    -- outs = aggregateOuts u
     stakeRelation :: [(Credential 'Staking crypto, Coin)] -- We compute Lists (not Maps) because the duplicate tuples matter, later when we use: Map.fromListWith (+)
-    stakeRelation = (baseStake outs ++ ptrStake outs (forwards ptrs') ++ rewardStake rewards')
+    -- stakeRelation = (baseStake outs ++ ptrStake outs (forwards ptrs') ++ rewardStake rewards')
+    stakeRelation = (aggregateStakes (forwards ptrs') u ++ rewardStake rewards')
     activeDelegs :: Map (Credential 'Staking crypto) (KeyHash 'StakePool crypto)
     activeDelegs = eval ((dom stkcreds ◁ delegs) ▷ dom stpools)
 

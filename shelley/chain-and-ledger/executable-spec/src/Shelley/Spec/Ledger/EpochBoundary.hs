@@ -21,6 +21,7 @@ module Shelley.Spec.Ledger.EpochBoundary
     emptySnapShots,
     rewardStake,
     aggregateOuts,
+    aggregateStakes,
     baseStake,
     ptrStake,
     poolStake,
@@ -82,7 +83,19 @@ getStakeHK _ = Nothing
 
 aggregateOuts :: Crypto crypto => UTxO crypto -> Map (Addr crypto) Coin
 aggregateOuts (UTxO u) =
-  Map.fromListWith (+) (map (\(_, TxOut a c) -> (a, c)) $ Map.toList u)
+  -- Map.fromListWith (+) (map (\(_, TxOut a c) -> (a, c)) $ Map.toList u)
+  Map.foldr accum Map.empty u
+    where accum (TxOut a c) ans = Map.insertWith (+) a c ans
+
+aggregateStakes::  Crypto crypto => Map Ptr (Credential 'Staking crypto) -> UTxO crypto -> [(Credential 'Staking crypto, Coin)]
+aggregateStakes ptrs (UTxO u) =
+  Map.foldr accum [] u
+    where accum (TxOut (Addr _ _ (StakeRefBase hk)) c) ans = (hk,c):ans
+          accum (TxOut (Addr _ _ (StakeRefPtr p)) c) ans =
+             case Map.lookup p ptrs of
+               Just cred -> (cred,c):ans
+               Nothing -> ans
+          accum _other ans = ans
 
 -- | Get Stake of base addresses in TxOut set.
 baseStake ::
