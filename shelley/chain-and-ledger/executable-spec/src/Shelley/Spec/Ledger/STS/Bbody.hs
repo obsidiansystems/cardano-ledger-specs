@@ -17,12 +17,16 @@ module Shelley.Spec.Ledger.STS.Bbody
   )
 where
 
+import Data.Proxy (Proxy (..))
+import qualified Cardano.Crypto.KES as KES
+import qualified Cardano.Crypto.VRF as VRF
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.State.Transition
   ( Embed (..),
     STS (..),
     TRC (..),
     TransitionRule,
+    failBecause,
     judgmentContext,
     trans,
     (?!),
@@ -42,7 +46,7 @@ import Shelley.Spec.Ledger.BlockChain
     incrBlocks,
     poolIDfromBHBody,
   )
-import Shelley.Spec.Ledger.Crypto (Crypto)
+import Shelley.Spec.Ledger.Crypto (Crypto (..))
 import Shelley.Spec.Ledger.EpochBoundary (BlocksMade)
 import Shelley.Spec.Ledger.Keys (DSignable, Hash, coerceKeyRole)
 import Shelley.Spec.Ledger.LedgerState
@@ -94,6 +98,7 @@ instance
     | InvalidBodyHashBBODY
         !(HashBBody crypto) -- Actual Hash
         !(HashBBody crypto) -- Claimed Hash
+    | Stuff !String
     | LedgersFailure (PredicateFailure (LEDGERS crypto)) -- Subtransition Failures
     deriving (Show, Eq, Generic)
 
@@ -116,6 +121,16 @@ bbodyTransition =
                Block (BHeader bhb _) txsSeq
                )
            ) -> do
+        failBecause $
+          Stuff ( "VRF vkey size: "
+                    <> (show $ VRF.sizeVerKeyVRF (Proxy @(VRF crypto)))
+                    <> "\nVRF proof size: "
+                    <> (show $ VRF.sizeCertVRF (Proxy @(VRF crypto)))
+                    <> "\nKES vkey size: "
+                    <> (show $ KES.sizeVerKeyKES (Proxy @(KES crypto)))
+                    <> "\nKES sig size: "
+                    <> (show $ KES.sizeSigKES (Proxy @(KES crypto)))
+                )
         let TxSeq txs = txsSeq
             actualBodySize = bBodySize txsSeq
             actualBodyHash = bbHash txsSeq
