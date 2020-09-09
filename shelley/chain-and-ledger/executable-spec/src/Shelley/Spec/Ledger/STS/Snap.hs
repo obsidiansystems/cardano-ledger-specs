@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE EmptyDataDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Shelley.Spec.Ledger.STS.Snap
@@ -11,7 +13,9 @@ module Shelley.Spec.Ledger.STS.Snap
   )
 where
 
+import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.State.Transition
   ( STS (..),
@@ -19,7 +23,6 @@ import Control.State.Transition
     TransitionRule,
     judgmentContext,
   )
-import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Shelley.Spec.Ledger.BaseTypes
 import Shelley.Spec.Ledger.EpochBoundary
@@ -37,7 +40,7 @@ data SnapPredicateFailure era -- No predicate failures
 
 instance NoUnexpectedThunks (SnapPredicateFailure era)
 
-instance (Era era, Typeable era) => STS (SNAP era) where
+instance (Era era, Core.ValType era, (Val.Val (Core.Value era))) => STS (SNAP era) where
   type State (SNAP era) = SnapShots era
   type Signal (SNAP era) = ()
   type Environment (SNAP era) = LedgerState era
@@ -46,9 +49,14 @@ instance (Era era, Typeable era) => STS (SNAP era) where
   initialRules = [pure emptySnapShots]
   transitionRules = [snapTransition]
 
-snapTransition :: Era era => TransitionRule (SNAP era)
+snapTransition ::
+  ( Era era,
+    Core.ValType era,
+    (Val.Val (Core.Value era))
+  ) =>
+  TransitionRule (SNAP era)
 snapTransition = do
-  TRC (lstate, s, ()) <- judgmentContext
+  TRC (lstate, s, _) <- judgmentContext
 
   let LedgerState (UTxOState utxo _ fees _) (DPState dstate pstate) = lstate
       stake = stakeDistr utxo dstate pstate

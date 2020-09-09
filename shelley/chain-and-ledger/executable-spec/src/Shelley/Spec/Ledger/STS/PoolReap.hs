@@ -1,8 +1,12 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE EmptyDataDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Shelley.Spec.Ledger.STS.PoolReap
   ( POOLREAP,
@@ -13,6 +17,8 @@ module Shelley.Spec.Ledger.STS.PoolReap
 where
 
 import Cardano.Ledger.Val ((<+>), (<->))
+import qualified Cardano.Ledger.Core as Core
+import Cardano.Ledger.Era (Era)
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.Iterate.SetAlgebra (dom, eval, setSingleton, (∈), (∪+), (⋪), (⋫), (▷), (◁))
 import Control.State.Transition
@@ -51,7 +57,12 @@ data PoolreapState era = PoolreapState
     prDState :: DState era,
     prPState :: PState era
   }
-  deriving (Show, Eq)
+
+deriving stock instance
+  ( Era era,
+    Core.ValType era
+  ) =>
+  Show (PoolreapState era)
 
 data PoolreapPredicateFailure era -- No predicate Falures
   deriving (Show, Eq, Generic)

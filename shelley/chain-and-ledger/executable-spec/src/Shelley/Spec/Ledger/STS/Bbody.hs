@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -18,7 +20,9 @@ module Shelley.Spec.Ledger.STS.Bbody
   )
 where
 
+import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.Monad.Trans.Reader (asks)
 import Control.State.Transition
@@ -62,7 +66,14 @@ data BBODY era
 
 data BbodyState era
   = BbodyState (LedgerState era) (BlocksMade era)
-  deriving (Eq, Show)
+
+deriving stock instance
+  ( Era era,
+    Core.Compactible (Core.Value era),
+    Core.ValType era,
+    Show (Core.Value era)
+  ) =>
+  Show (BbodyState era)
 
 data BbodyEnv era = BbodyEnv
   { bbodyPp :: PParams era,
@@ -77,10 +88,24 @@ data BbodyPredicateFailure era
       !(HashBBody era) -- Actual Hash
       !(HashBBody era) -- Claimed Hash
   | LedgersFailure (PredicateFailure (LEDGERS era)) -- Subtransition Failures
-  deriving (Show, Eq, Generic)
+  deriving (Generic)
+
+deriving stock instance
+  ( Era era,
+    Core.ValType era
+  ) =>
+  Show (BbodyPredicateFailure era)
+
+deriving stock instance
+  ( Era era,
+    Core.ValType era
+  ) =>
+  Eq (BbodyPredicateFailure era)
 
 instance
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (TxBody era))
   ) =>
   STS (BBODY era)
@@ -102,11 +127,17 @@ instance
   initialRules = []
   transitionRules = [bbodyTransition]
 
-instance (Era era) => NoUnexpectedThunks (BbodyPredicateFailure era)
+instance
+  ( Era era,
+    Core.ValType era
+  ) =>
+  NoUnexpectedThunks (BbodyPredicateFailure era)
 
 bbodyTransition ::
   forall era.
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (TxBody era))
   ) =>
   TransitionRule (BBODY era)
@@ -151,6 +182,8 @@ bbodyTransition =
 
 instance
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (TxBody era))
   ) =>
   Embed (LEDGERS era) (BBODY era)

@@ -1,8 +1,12 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Interface to the block validation and chain extension logic in the Shelley
 -- API.
@@ -17,12 +21,18 @@ module Shelley.Spec.Ledger.API.Validation
   )
 where
 
-import Cardano.Ledger.Era
+import qualified Cardano.Ledger.Core as Core
+import Cardano.Ledger.Era (Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.Arrow (left, right)
 import Control.Monad.Except
 import Control.Monad.Trans.Reader (runReader)
-import Control.State.Transition.Extended (TRC (..), applySTS, reapplySTS)
+import Control.State.Transition.Extended
+  ( TRC (..),
+    applySTS,
+    reapplySTS,
+  )
 import GHC.Generics (Generic)
 import Shelley.Spec.Ledger.BaseTypes (Globals (..))
 import Shelley.Spec.Ledger.BlockChain
@@ -68,9 +78,19 @@ mkBbodyEnv
 
 newtype TickTransitionError era
   = TickTransitionError [STS.PredicateFailure (STS.TICK era)]
-  deriving (Eq, Show, Generic)
+  deriving (Generic)
 
-instance NoUnexpectedThunks (TickTransitionError era)
+instance
+  (NoUnexpectedThunks (STS.PredicateFailure (STS.TICK era))) =>
+  NoUnexpectedThunks (TickTransitionError era)
+
+deriving stock instance
+  (Eq (STS.PredicateFailure (STS.TICK era))) =>
+  Eq (TickTransitionError era)
+
+deriving stock instance
+  (Show (STS.PredicateFailure (STS.TICK era))) =>
+  Show (TickTransitionError era)
 
 -- | Apply the header level ledger transition.
 --
@@ -78,7 +98,10 @@ instance NoUnexpectedThunks (TickTransitionError era)
 -- header level checks, such as size constraints.
 applyTickTransition ::
   forall era.
-  (Era era) =>
+  ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era)
+  ) =>
   Globals ->
   ShelleyState era ->
   SlotNo ->
@@ -93,14 +116,26 @@ applyTickTransition globals state hdr =
 
 newtype BlockTransitionError era
   = BlockTransitionError [STS.PredicateFailure (STS.BBODY era)]
-  deriving (Eq, Generic, Show)
+  deriving (Generic)
 
-instance (Era era) => NoUnexpectedThunks (BlockTransitionError era)
+deriving stock instance
+  (Eq (STS.PredicateFailure (STS.BBODY era))) =>
+  Eq (BlockTransitionError era)
+
+deriving stock instance
+  (Show (STS.PredicateFailure (STS.BBODY era))) =>
+  Show (BlockTransitionError era)
+
+instance
+  (NoUnexpectedThunks (STS.PredicateFailure (STS.BBODY era))) =>
+  NoUnexpectedThunks (BlockTransitionError era)
 
 -- | Apply the block level ledger transition.
 applyBlockTransition ::
   forall era m.
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     MonadError (BlockTransitionError era) m,
     DSignable era (Hash era (Tx.TxBody era))
   ) =>
@@ -136,6 +171,8 @@ applyBlockTransition globals state blk =
 reapplyBlockTransition ::
   forall era.
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (Tx.TxBody era))
   ) =>
   Globals ->

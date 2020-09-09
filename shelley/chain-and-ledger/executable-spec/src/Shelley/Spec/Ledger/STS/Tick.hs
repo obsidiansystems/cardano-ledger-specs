@@ -1,11 +1,15 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Shelley.Spec.Ledger.STS.Tick
   ( TICK,
@@ -15,7 +19,9 @@ module Shelley.Spec.Ledger.STS.Tick
   )
 where
 
+import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.Iterate.SetAlgebra (eval, (⨃))
 import Control.Monad.Trans.Reader (asks)
@@ -41,12 +47,19 @@ data TICK era
 data TickPredicateFailure era
   = NewEpochFailure (PredicateFailure (NEWEPOCH era)) -- Subtransition Failures
   | RupdFailure (PredicateFailure (RUPD era)) -- Subtransition Failures
-  deriving (Show, Generic, Eq)
+  deriving (Generic)
+
+deriving stock instance Show (TickPredicateFailure era)
+
+deriving stock instance Eq (TickPredicateFailure era)
 
 instance NoUnexpectedThunks (TickPredicateFailure era)
 
 instance
-  Era era =>
+  ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era)
+  ) =>
   STS (TICK era)
   where
   type
@@ -93,7 +106,10 @@ adoptGenesisDelegs es slot = es'
 
 bheadTransition ::
   forall era.
-  (Era era) =>
+  ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era)
+  ) =>
   TransitionRule (TICK era)
 bheadTransition = do
   TRC ((), nes@(NewEpochState _ bprev _ es _ _), slot) <-
@@ -116,13 +132,13 @@ bheadTransition = do
   pure nes''
 
 instance
-  Era era =>
+  (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
   Embed (NEWEPOCH era) (TICK era)
   where
   wrapFailed = NewEpochFailure
 
 instance
-  Era era =>
+  (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
   Embed (RUPD era) (TICK era)
   where
   wrapFailed = RupdFailure

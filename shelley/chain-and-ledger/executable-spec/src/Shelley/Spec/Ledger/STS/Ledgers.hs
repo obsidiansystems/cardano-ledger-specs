@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -17,7 +19,9 @@ module Shelley.Spec.Ledger.STS.Ledgers
 where
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (NoUnexpectedThunks (..))
 import Control.Monad (foldM)
 import Control.State.Transition
@@ -30,7 +34,6 @@ import Control.State.Transition
   )
 import Data.Foldable (toList)
 import Data.Sequence (Seq)
-import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.Keys (DSignable, Hash)
@@ -56,12 +59,18 @@ data LedgersEnv era = LedgersEnv
 
 data LedgersPredicateFailure era
   = LedgerFailure (PredicateFailure (LEDGER era)) -- Subtransition Failures
-  deriving (Show, Eq, Generic)
+  deriving (Generic)
 
-instance (Era era) => NoUnexpectedThunks (LedgersPredicateFailure era)
+deriving stock instance (Era era, Core.ValType era) => Show (LedgersPredicateFailure era)
+
+deriving stock instance (Era era, Core.ValType era) => Eq (LedgersPredicateFailure era)
+
+instance (Era era, Core.ValType era) => NoUnexpectedThunks (LedgersPredicateFailure era)
 
 instance
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (TxBody era))
   ) =>
   STS (LEDGERS era)
@@ -76,13 +85,13 @@ instance
   transitionRules = [ledgersTransition]
 
 instance
-  (Typeable era, Era era) =>
+  (Core.ValType era, Era era) =>
   ToCBOR (LedgersPredicateFailure era)
   where
   toCBOR (LedgerFailure e) = toCBOR e
 
 instance
-  (Era era) =>
+  (Era era, Core.ValType era) =>
   FromCBOR (LedgersPredicateFailure era)
   where
   fromCBOR = LedgerFailure <$> fromCBOR
@@ -90,6 +99,8 @@ instance
 ledgersTransition ::
   forall era.
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (TxBody era))
   ) =>
   TransitionRule (LEDGERS era)
@@ -110,6 +121,8 @@ ledgersTransition = do
 
 instance
   ( Era era,
+    Core.ValType era,
+    Val.Val (Core.Value era),
     DSignable era (Hash era (TxBody era))
   ) =>
   Embed (LEDGER era) (LEDGERS era)

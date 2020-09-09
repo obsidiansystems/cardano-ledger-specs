@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -25,6 +27,7 @@ import Cardano.Binary
     ToCBOR (..),
     encodeListLen,
   )
+import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
 import Cardano.Ledger.Val (scaledMinDeposit, (<->))
 import Cardano.Prelude (NoUnexpectedThunks (..), asks)
@@ -49,7 +52,6 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Typeable (Typeable)
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 import Shelley.Spec.Ledger.Address
@@ -119,8 +121,8 @@ data UtxoPredicateFailure era
       !Coin -- the minimum fee for this transaction
       !Coin -- the fee supplied in this transaction
   | ValueNotConservedUTxO
-      !Coin -- the Coin consumed by this transaction
-      !Coin -- the Coin produced by this transaction
+      !(Core.Value era) -- the Coin consumed by this transaction
+      !(Core.Value era) -- the Coin produced by this transaction
   | WrongNetwork
       !Network -- the expected network id
       !(Set (Addr era)) -- the set of addresses with incorrect network IDs
@@ -132,12 +134,20 @@ data UtxoPredicateFailure era
   | UpdateFailure (PredicateFailure (PPUP era)) -- Subtransition Failures
   | OutputBootAddrAttrsTooBig
       ![TxOut era] -- list of supplied bad transaction outputs
-  deriving (Eq, Show, Generic)
+  deriving (Generic)
 
-instance NoUnexpectedThunks (UtxoPredicateFailure era)
+deriving stock instance
+  (Era era, Core.ValType era, Core.Compactible (Core.Value era), Show (Core.Value era)) =>
+  Show (UtxoPredicateFailure era)
+
+deriving stock instance
+  (Era era, Core.ValType era, Eq (Core.CompactForm (Core.Value era)), Eq (Core.Value era)) =>
+  Eq (UtxoPredicateFailure era)
+
+instance NoUnexpectedThunks (Core.Value era) => NoUnexpectedThunks (UtxoPredicateFailure era)
 
 instance
-  (Typeable era, Era era) =>
+  (Era era, Core.ValType era, ToCBOR (Core.Value era)) =>
   ToCBOR (UtxoPredicateFailure era)
   where
   toCBOR = \case
@@ -179,7 +189,7 @@ instance
         <> encodeFoldable outs
 
 instance
-  (Era era) =>
+  (Era era, Core.ValType era, FromCBOR (Core.Value era)) =>
   FromCBOR (UtxoPredicateFailure era)
   where
   fromCBOR =
@@ -225,7 +235,7 @@ instance
         k -> invalidKey k
 
 instance
-  (Era era) =>
+  (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
   STS (UTXO era)
   where
   type State (UTXO era) = UTxOState era
@@ -254,8 +264,9 @@ instance
       PostCondition
         "Deposit pot must not be negative (post)"
         (\_ st' -> _deposited st' >= mempty),
-      let utxoBalance us = _deposited us <> _fees us <> balance (_utxo us)
-          withdrawals txb = foldl' (<>) mempty $ unWdrl $ _wdrls txb
+      let utxoBalance us = (Val.inject $ _deposited us <> _fees us) <> balance (_utxo us)
+          withdrawals :: TxBody era -> Core.Value era
+          withdrawals txb = Val.inject $ foldl' (<>) mempty $ unWdrl $ _wdrls txb
        in PostCondition
             "Should preserve ADA in the UTxO state"
             ( \(TRC (_, us, tx)) us' ->
@@ -270,7 +281,7 @@ initialLedgerState = do
 
 utxoInductive ::
   forall era.
-  Era era =>
+  (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
   TransitionRule (UTXO era)
 utxoInductive = do
   TRC (UtxoEnv slot pp stakepools genDelegs, u, tx) <- judgmentContext
@@ -308,7 +319,7 @@ utxoInductive = do
 
   let outputs = Map.elems $ unUTxO (txouts txb)
       minUTxOValue = _minUTxOValue pp
-      outputsTooSmall = [out | out@(TxOut _ c) <- outputs, c < (scaledMinDeposit c minUTxOValue)]
+      outputsTooSmall = [out | out@(TxOut _ c) <- outputs, c Val.< (Val.inject $ Val.scaledMinDeposit c minUTxOValue)]
   null outputsTooSmall ?! OutputTooSmallUTxO outputsTooSmall
 
   -- Bootstrap (i.e. Byron) addresses have variable sized attributes in them.
@@ -334,7 +345,7 @@ utxoInductive = do
       }
 
 instance
-  Era era =>
+  (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
   Embed (PPUP era) (UTXO era)
   where
   wrapFailed = UpdateFailure

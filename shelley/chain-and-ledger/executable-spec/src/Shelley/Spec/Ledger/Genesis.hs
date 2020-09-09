@@ -3,12 +3,14 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances #-} 
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Shelley.Spec.Ledger.Genesis
@@ -27,6 +29,7 @@ where
 
 import qualified Cardano.Crypto.Hash.Class as Crypto
 import Cardano.Crypto.KES.Class (totalPeriodsKES)
+import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Crypto (HASH, KES)
 import Cardano.Ledger.Era
 import Cardano.Prelude (NoUnexpectedThunks, forceElemsToWHNF)
@@ -54,6 +57,7 @@ import Shelley.Spec.Ledger.PParams
 import Shelley.Spec.Ledger.StabilityWindow
 import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.UTxO
+import qualified Cardano.Ledger.Val as Val
 
 -- | Genesis Shelley staking configuration.
 --
@@ -188,14 +192,17 @@ instance Era era => FromJSON (ShelleyGenesisStaking era) where
   Genesis UTxO
 -------------------------------------------------------------------------------}
 
-genesisUtxO :: Era era => ShelleyGenesis era -> UTxO era
+genesisUtxO ::
+  (Era era, Val.Val (Core.Value era), Core.ValType era) =>
+  ShelleyGenesis era ->
+  UTxO era
 genesisUtxO genesis =
   UTxO $
     Map.fromList
       [ (txIn, txOut)
         | (addr, amount) <- Map.toList (sgInitialFunds genesis),
           let txIn = initialFundsPseudoTxIn addr
-              txOut = TxOut addr amount
+              txOut = TxOut addr (Val.inject amount)
       ]
 
 -- | Compute the 'TxIn' of the initial UTxO pseudo-transaction corresponding

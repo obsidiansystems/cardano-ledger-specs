@@ -36,28 +36,15 @@ module Cardano.Ledger.Val
   )
 where
 
-import Cardano.Binary
-  ( FromCBOR (..),
-    ToCBOR (..),
-  )
-import Cardano.Prelude (NFData (), NoUnexpectedThunks (..))
 import Data.Group (Abelian)
 import Data.PartialOrd hiding ((==))
 import qualified Data.PartialOrd
-import Data.Typeable (Typeable)
 import Shelley.Spec.Ledger.Coin (Coin (..))
 
 class
   ( Abelian t,
     Eq t,
-    PartialOrd t,
-    -- Do we really need these?
-    Show t,
-    Typeable t,
-    NFData t,
-    NoUnexpectedThunks t,
-    ToCBOR t,
-    FromCBOR t
+    PartialOrd t
   ) =>
   Val t
   where
