@@ -81,6 +81,8 @@ newEpochTransition = do
       e@(EpochNo e_)
       ) <-
     judgmentContext
+
+  e_ < 213 ?! (CorruptRewardUpdate $ emptyRewardUpdate {rs = _rewards . _dstate . _delegationState . esLState $ es, deltaF = Coin 7})
   if e_ /= eL + 1
     then pure src
     else do
