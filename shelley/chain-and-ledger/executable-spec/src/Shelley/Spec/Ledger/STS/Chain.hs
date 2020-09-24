@@ -137,7 +137,7 @@ data ChainState era = ChainState
   deriving (Generic)
 
 deriving stock instance
-  (Era era, 
+  (Era era,
    Core.ValType era) =>
   Show (ChainState era)
 
@@ -259,7 +259,7 @@ chainChecks maxpv pp bh = do
 chainTransition ::
   forall era.
   ( Era era,
-    Core.ValType era, 
+    Core.ValType era,
     Val.Val (Core.Value era),
     DSignable era (OCertSignable era),
     DSignable era (Hash era (TxBody era)),
@@ -286,7 +286,7 @@ chainTransition =
           Right () -> pure ()
           Left e -> failBecause $ PrtclSeqFailure e
 
-      let NewEpochState _ _ _ (EpochState _ _ _ _ pp _) _ _ = nes
+        let NewEpochState _ _ _ (EpochState _ _ _ _ pp _) _ _ = nes
 
         maxpv <- liftSTS $ asks maxMajorPV
         case chainChecks maxpv pp bh of
@@ -296,10 +296,10 @@ chainTransition =
         let s = bheaderSlotNo $ bhbody bh
 
         nes' <-
-        trans @(TICK era) $ TRC ((), nes, s)
+          trans @(TICK era) $ TRC ((), nes, s)
 
-      let NewEpochState e1 _ _ _ _ _ = nes
-          NewEpochState e2 _ bcur es _ _pd = nes'
+        let NewEpochState e1 _ _ _ _ _ = nes
+            NewEpochState e2 _ bcur es _ _pd = nes'
         let EpochState account _ ls _ pp' _ = es
         let LedgerState _ (DPState (DState _ _ _ _ _genDelegs _) (PState _ _ _)) = ls
 
@@ -307,7 +307,7 @@ chainTransition =
             etaPH = prevHashToNonce ph
 
         TicknState eta0' etaH' <-
-        trans @(TICKN era) $
+          trans @(TICKN era) $
             TRC
               ( TicknEnv pp' etaC etaPH,
                 TicknState eta0 etaH,
@@ -400,7 +400,7 @@ data AdaPots = AdaPots
   deriving (Show, Eq)
 
 -- | Calculate the total ada pots in the chain state
-totalAdaPots :: (Core.ValType era, Val.Val (Core.Value era)) => 
+totalAdaPots :: (Core.ValType era, Val.Val (Core.Value era)) =>
   ChainState era -> AdaPots
 totalAdaPots (ChainState nes _ _ _ _ _ _) =
   AdaPots

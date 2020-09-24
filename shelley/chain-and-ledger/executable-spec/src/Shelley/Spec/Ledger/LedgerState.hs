@@ -98,6 +98,7 @@ import Cardano.Binary
   )
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Ledger.Val (invert, (<+>), (<->), (<×>))
 import Cardano.Prelude (NFData, NoUnexpectedThunks (..))
 import Control.Iterate.SetAlgebra (Bimap, biMapEmpty, dom, eval, forwards, range, (∈), (∪+), (▷), (◁))
@@ -579,7 +580,7 @@ instance (Era era) => NFData (NewEpochState era)
 
 instance NoUnexpectedThunks (NewEpochState era)
 
-instance Era era => ToCBOR (NewEpochState era) where
+instance (Era era, Core.ValType era) => ToCBOR (NewEpochState era) where
   toCBOR (NewEpochState e bp bc es ru pd) =
     encodeListLen 6 <> toCBOR e <> toCBOR bp <> toCBOR bc <> toCBOR es
       <> toCBOR ru

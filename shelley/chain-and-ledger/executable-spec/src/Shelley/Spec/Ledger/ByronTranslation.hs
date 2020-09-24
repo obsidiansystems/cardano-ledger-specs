@@ -19,7 +19,6 @@ import qualified Cardano.Chain.UTxO as Byron
 import qualified Cardano.Crypto.Hash as Crypto
 import qualified Cardano.Crypto.Hashing as Hashing
 import qualified Cardano.Ledger.Crypto as CC
-import Cardano.Ledger.Era
 import Cardano.Ledger.Val ((<->))
 import Cardano.Ledger.Shelley (Shelley)
 import qualified Data.ByteString.Short as SBS
@@ -86,8 +85,8 @@ translateUTxOByronToShelley (Byron.UTxO utxoByron) =
       ]
 
 translateToShelleyLedgerState ::
-  forall era c.
-  (Era era, CC.ADDRHASH c ~ Crypto.Blake2b_224, era ~ Shelley c) =>
+  forall c.
+  (CC.Crypto c, CC.ADDRHASH c ~ Crypto.Blake2b_224) =>
   ShelleyGenesis (Shelley c) ->
   EpochNo ->
   Byron.ChainValidationState ->
@@ -102,7 +101,7 @@ translateToShelleyLedgerState genesisShelley epochNo cvs =
       nesPd = PoolDistr Map.empty
     }
   where
-    pparams :: PParams era
+    pparams :: PParams (Shelley c)
     pparams = sgProtocolParams genesisShelley
 
     -- NOTE: we ignore the Byron delegation map because the genesis and

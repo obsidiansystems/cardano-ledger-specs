@@ -32,6 +32,7 @@ where
 import Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen)
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Ledger.Val ((<+>), (<×>))
 import Cardano.Prelude (NFData, NoUnexpectedThunks (..))
 import Control.Iterate.SetAlgebra (dom, eval, setSingleton, (▷), (◁))

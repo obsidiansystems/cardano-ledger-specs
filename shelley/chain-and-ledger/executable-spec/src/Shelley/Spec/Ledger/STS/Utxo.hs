@@ -29,7 +29,8 @@ import Cardano.Binary
   )
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era)
-import Cardano.Ledger.Val (scaledMinDeposit, (<->))
+import Cardano.Ledger.Val ((<->))
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (NoUnexpectedThunks (..), asks)
 import Control.Iterate.SetAlgebra (dom, eval, (∪), (⊆), (⋪))
 import Control.State.Transition

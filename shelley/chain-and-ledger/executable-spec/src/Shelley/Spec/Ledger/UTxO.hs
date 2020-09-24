@@ -46,6 +46,7 @@ where
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Ledger.Val ((<+>), (<×>))
 import Cardano.Prelude (Generic, NFData, NoUnexpectedThunks (..))
 import Control.Iterate.SetAlgebra

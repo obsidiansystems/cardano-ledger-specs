@@ -17,6 +17,7 @@ where
 
 import qualified Cardano.Crypto.VRF as VRF
 import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Ledger.Crypto (VRF)
 import Cardano.Ledger.Era (Crypto, Era)
 import Cardano.Slotting.EpochInfo (epochInfoRange)
@@ -71,7 +72,8 @@ import Shelley.Spec.Ledger.UTxO (UTxO (..))
 -- stake.
 --
 -- This is not based on any snapshot, but uses the current ledger state.
-poolsByTotalStakeFraction :: Era era => Globals -> ShelleyState era -> PoolDistr era
+poolsByTotalStakeFraction :: (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
+  Globals -> ShelleyState era -> PoolDistr era
 poolsByTotalStakeFraction globals ss =
   PoolDistr poolsByTotalStake
   where
@@ -163,7 +165,7 @@ getNonMyopicMemberRewards globals ss creds =
 -- When ranking pools, and reporting their saturation level, in the wallet, we
 -- do not want to use one of the regular snapshots, but rather the most recent
 -- ledger state.
-currentSnapshot :: Era era => ShelleyState era -> EB.SnapShot era
+currentSnapshot :: (Era era, Core.ValType era, Val.Val (Core.Value era)) => ShelleyState era -> EB.SnapShot era
 currentSnapshot ss =
   stakeDistr utxo dstate pstate
   where

@@ -426,7 +426,7 @@ instance NoUnexpectedThunks (TxIn era)
 data TxOut era
   = TxOutCompact
       {-# UNPACK #-} !BSS.ShortByteString
-      {-# UNPACK #-} !(Core.CompactForm (Core.Value era))
+      !(Core.CompactForm (Core.Value era))
 
 instance
   (Era era, Show (Core.Value era), Core.ValType era) =>
