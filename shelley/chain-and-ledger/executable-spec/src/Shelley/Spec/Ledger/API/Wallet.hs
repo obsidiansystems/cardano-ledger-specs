@@ -17,9 +17,9 @@ where
 
 import qualified Cardano.Crypto.VRF as VRF
 import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Val as Val
 import Cardano.Ledger.Crypto (VRF)
 import Cardano.Ledger.Era (Crypto, Era)
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Slotting.EpochInfo (epochInfoRange)
 import Cardano.Slotting.Slot (SlotNo)
 import qualified Data.ByteString.Short as BSS
@@ -72,8 +72,11 @@ import Shelley.Spec.Ledger.UTxO (UTxO (..))
 -- stake.
 --
 -- This is not based on any snapshot, but uses the current ledger state.
-poolsByTotalStakeFraction :: (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
-  Globals -> ShelleyState era -> PoolDistr era
+poolsByTotalStakeFraction ::
+  (Era era, Core.ValType era, Val.Val (Core.Value era)) =>
+  Globals ->
+  ShelleyState era ->
+  PoolDistr era
 poolsByTotalStakeFraction globals ss =
   PoolDistr poolsByTotalStake
   where

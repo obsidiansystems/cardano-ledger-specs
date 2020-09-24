@@ -1,4 +1,5 @@
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Test.Shelley.Spec.Ledger.Shrinkers where
 
@@ -13,9 +14,10 @@ import qualified Data.Sequence.Strict as StrictSeq
 import Data.Set (Set)
 import qualified Data.Set as S
 import Shelley.Spec.Ledger.BlockChain
-import Shelley.Spec.Ledger.Coin
-
+import qualified Cardano.Ledger.Val as Val
 import Cardano.Ledger.Era
+import qualified Cardano.Ledger.Core as Core
+import Test.Cardano.Ledger.Val (ValTest (..), shrinkCoin)
 import Shelley.Spec.Ledger.PParams
 import Shelley.Spec.Ledger.Scripts
 import Shelley.Spec.Ledger.Slot
@@ -31,22 +33,27 @@ shrinkBlock _ = []
 
 shrinkTx ::
   forall era.
-  Era era =>
+  (Era era, ValTest (Core.Value era), Core.ValType era) =>
   Tx era ->
   [Tx era]
 shrinkTx (Tx _b _ws _md) =
   [Tx b' _ws _md | b' <- shrinkTxBody _b]
 
-shrinkTxBody :: Era era => TxBody era -> [TxBody era]
+shrinkTxBody :: (Era era, ValTest (Core.Value era), Core.ValType era) =>
+   TxBody era -> [TxBody era]
 shrinkTxBody (TxBody is os cs ws tf tl tu md) =
   -- shrinking inputs is probably not very beneficial
   -- [ TxBody is' os cs ws tf tl tu | is' <- shrinkSet shrinkTxIn is ] ++
 
   -- Shrink outputs, add the differing balance of the original and new outputs
   -- to the fees in order to preserve the invariant
-  [ TxBody is os' cs ws (tf <+> (outBalance <-> outputBalance os')) tl tu md
-    | os' <- toList $ shrinkStrictSeq shrinkTxOut os
-  ]
+  case os of
+    StrictSeq.Empty -> []
+    (TxOut haddr hval)  StrictSeq.:<| rest -> do
+      os' <- shrinkStrictSeq shrinkTxOut rest
+      let extraBalance = outBalance <-> outputBalance os'
+      let os'' = TxOut haddr (hval <+> extraBalance) StrictSeq.:<| rest
+      pure (TxBody is os'' cs ws tf tl tu md)
   where
     -- [ TxBody is os cs' ws tf tl tu | cs' <- shrinkSeq shrinkDCert cs ] ++
     -- [ TxBody is os cs ws' tf tl tu | ws' <- shrinkWdrl ws ] ++
@@ -55,18 +62,16 @@ shrinkTxBody (TxBody is os cs ws tf tl tu md) =
     -- [ TxBody is os cs ws tf tl tu' | tu' <- shrinkUpdate tu ]
     outBalance = outputBalance os
 
-outputBalance :: Era era => StrictSeq (TxOut era) -> Coin
-outputBalance = foldl' (\v (TxOut _ c) -> v <+> c) (Coin 0)
+outputBalance :: (Era era, Val.Val (Core.Value era), Core.ValType era) =>
+   StrictSeq (TxOut era) -> Core.Value era
+outputBalance = foldl' (\v (TxOut _ c) -> v <+> c) mempty
 
 shrinkTxIn :: TxIn era -> [TxIn era]
 shrinkTxIn = const []
 
-shrinkTxOut :: Era era => TxOut era -> [TxOut era]
-shrinkTxOut (TxOut addr coin) =
-  TxOut addr <$> shrinkCoin coin
-
-shrinkCoin :: Coin -> [Coin]
-shrinkCoin (Coin x) = Coin <$> shrinkIntegral x
+shrinkTxOut :: (Era era, Core.ValType era, ValTest (Core.Value era)) => TxOut era -> [TxOut era]
+shrinkTxOut (TxOut addr value) =
+  TxOut addr <$> shrinkVal value
 
 shrinkDCert :: DCert era -> [DCert era]
 shrinkDCert = const []

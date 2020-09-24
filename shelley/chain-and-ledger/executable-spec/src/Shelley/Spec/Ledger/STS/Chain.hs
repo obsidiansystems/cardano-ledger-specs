@@ -137,8 +137,9 @@ data ChainState era = ChainState
   deriving (Generic)
 
 deriving stock instance
-  (Era era,
-   Core.ValType era) =>
+  ( Era era,
+    Core.ValType era
+  ) =>
   Show (ChainState era)
 
 instance (Era era) => NFData (ChainState era)
@@ -317,14 +318,14 @@ chainTransition =
         PrtclState cs' etaV' etaC' <-
           trans @(PRTCL era) $
             TRC
-            ( PrtclEnv (_d pp') _pd _genDelegs eta0',
+              ( PrtclEnv (_d pp') _pd _genDelegs eta0',
                 PrtclState cs etaV etaC,
                 bh
               )
 
         BbodyState ls' bcur' <-
           trans @(BBODY era) $
-          TRC (BbodyEnv pp' account, BbodyState ls bcur, block)
+            TRC (BbodyEnv pp' account, BbodyState ls bcur, block)
 
         let nes'' = updateNES nes' bcur' ls'
             bhb = bhbody bh
@@ -400,8 +401,10 @@ data AdaPots = AdaPots
   deriving (Show, Eq)
 
 -- | Calculate the total ada pots in the chain state
-totalAdaPots :: (Core.ValType era, Val.Val (Core.Value era)) =>
-  ChainState era -> AdaPots
+totalAdaPots ::
+  (Core.ValType era, Val.Val (Core.Value era)) =>
+  ChainState era ->
+  AdaPots
 totalAdaPots (ChainState nes _ _ _ _ _ _) =
   AdaPots
     { treasuryAdaPot = treasury_,
@@ -419,7 +422,7 @@ totalAdaPots (ChainState nes _ _ _ _ _ _) =
     circulation = Val.coin $ balance u
 
 -- | Calculate the total ada in the chain state
-totalAda :: (Core.ValType era, Val.Val (Core.Value era)) =>  ChainState era -> Coin
+totalAda :: (Core.ValType era, Val.Val (Core.Value era)) => ChainState era -> Coin
 totalAda cs =
   treasuryAdaPot
     <> reservesAdaPot

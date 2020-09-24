@@ -501,10 +501,6 @@ genCoinList minCoin maxCoin lower upper = do
   len <- QC.choose (lower, upper)
   replicateM len $ genCoin minCoin maxCoin
 
--- TODO this should be an exponential distribution, not constant
-genCoin :: HasCallStack => Integer -> Integer -> Gen Coin
-genCoin minCoin maxCoin = Coin <$> QC.choose (minCoin, maxCoin)
-
 -- | Generate values the given distribution in 90% of the cases, and values at
 -- the bounds of the range in 10% of the cases.
 --

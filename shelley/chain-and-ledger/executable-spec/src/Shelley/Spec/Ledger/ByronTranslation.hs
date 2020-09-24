@@ -19,14 +19,14 @@ import qualified Cardano.Chain.UTxO as Byron
 import qualified Cardano.Crypto.Hash as Crypto
 import qualified Cardano.Crypto.Hashing as Hashing
 import qualified Cardano.Ledger.Crypto as CC
-import Cardano.Ledger.Val ((<->))
 import Cardano.Ledger.Shelley (Shelley)
+import Cardano.Ledger.Val ((<->))
 import qualified Data.ByteString.Short as SBS
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
 import GHC.Stack (HasCallStack)
 import Shelley.Spec.Ledger.API
-import Shelley.Spec.Ledger.Coin (word64ToCoin, CompactForm(CompactCoin))
+import Shelley.Spec.Ledger.Coin (CompactForm (CompactCoin), word64ToCoin)
 import Shelley.Spec.Ledger.EpochBoundary
 import Shelley.Spec.Ledger.Genesis
 import Shelley.Spec.Ledger.LedgerState
