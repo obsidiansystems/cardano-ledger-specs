@@ -113,6 +113,7 @@ import Test.Shelley.Spec.Ledger.Generator.Core
     genesisId,
   )
 import Test.Shelley.Spec.Ledger.Orphans ()
+import Test.Shelley.Spec.Ledger.PoolRanking
 import Test.Shelley.Spec.Ledger.Utils
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -729,6 +730,20 @@ testBootstrap =
       testCase "don't spend from a bootstrap address" testBootstrapNotSpending
     ]
 
+test1PCT :: TestTree
+test1PCT =
+  testGroup
+    "1PCT"
+    [ testCase "1PCT maxPool bottom"
+        (onePCTmaxPool Bottom @?= Coin 85921632)
+    , testCase "1PCT maxPool top"
+        (onePCTmaxPool Top @?= Coin 164128340590)
+    , testCase "1PCT nm reward bottom"
+        (onePCTnmmr Bottom @?= Coin 0)
+    , testCase "1PCT nm reward top"
+        (onePCTnmmr Top @?= Coin 7648)
+    ]
+
 unitTests :: TestTree
 unitTests =
   testGroup
@@ -738,5 +753,6 @@ unitTests =
       sizeTests,
       testTruncateUnitInterval,
       testCheckLeaderVal,
-      testBootstrap
+      testBootstrap,
+      test1PCT
     ]
