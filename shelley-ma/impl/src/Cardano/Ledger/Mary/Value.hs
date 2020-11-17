@@ -19,6 +19,7 @@ module Cardano.Ledger.Mary.Value
   )
 where
 
+import Data.Maybe (fromMaybe)
 import Cardano.Binary
   ( FromCBOR,
     ToCBOR,
@@ -51,10 +52,16 @@ import Data.Set (Set)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
-import Shelley.Spec.Ledger.Coin (Coin (..))
+import Shelley.Spec.Ledger.Coin (Coin (..), integerToWord64)
 import Shelley.Spec.Ledger.Scripts (ScriptHash)
 import Shelley.Spec.Ledger.Serialization (decodeRecordNamed)
 import Prelude hiding (lookup)
+import Data.Array (Array)
+import Data.Array.IArray (array)
+import Data.Word (Word64)
+import qualified Data.Set as Set
+import Control.Monad (guard)
+
 
 -- | Asset Name
 newtype AssetName = AssetName {assetName :: ByteString}
@@ -74,6 +81,9 @@ newtype PolicyID era = PolicyID {policyID :: ScriptHash era}
 
 -- | The Value representing MultiAssets
 data Value era = Value !Integer !(Map (PolicyID era) (Map AssetName Integer))
+  deriving (Show, Generic)
+
+newtype Mint era = Mint (Map (PolicyID era) (Map AssetName Integer))
   deriving (Show, Generic)
 
 instance Era era => Eq (Value era) where
@@ -164,12 +174,51 @@ instance
 -- This is used in the TxOut which stores the (CompactForm Value). For now that is just Value
 -- We may revisit this, and make it some kind serialized bytes.
 
-instance Compactible (Value era) where
-  -- TODO a proper compact form
-  newtype CompactForm (Value era) = CompactValue {getCompactValue :: Value era}
+instance Era era => Compactible (Value era) where
+  newtype CompactForm (Value era) = CompactValue (CV era)
     deriving (ToCBOR, FromCBOR)
-  toCompact = CompactValue
-  fromCompact = getCompactValue
+  toCompact = CompactValue . toCV
+  fromCompact (CompactValue x) = fromCV x
+
+instance (Typeable (Core.Script era), Era era) => ToCBOR (CV era) where
+  toCBOR = toCBOR . fromCV
+
+instance (Typeable (Core.Script era), Era era) => FromCBOR (CV era) where
+  fromCBOR = toCV <$> fromCBOR
+
+data CV era = CV
+  {-# UNPACK #-} !Word64
+  {-# UNPACK #-} !(Array Int (CVPart era))
+
+data CVPart era = CVPart
+  (PolicyID era)
+  {-# UNPACK #-} !AssetName
+  {-# UNPACK #-} !Word64
+
+toCV :: Value era -> CV era
+toCV v =
+  let (c,triples) = gettriples v
+      policyIDs = Set.fromList $ (\(x,_,_) -> x) <$> triples
+      n = length triples - 1
+      arr = array (0,n) (zip [0..n] (toCVPart policyIDs <$> triples))
+   in CV (convert c) arr
+  where
+   toCVPart policyIdSet (policyId, aname, amount) =
+     CVPart (dedup policyIdSet policyId) aname (convert amount)
+   convert x = fromMaybe (error $ "out of bounds : " ++ show x)
+      (integerToWord64 x)
+
+fromCV :: Era era => CV era -> Value era
+fromCV (CV w vs) = foldr f (inject . Coin . fromIntegral $ w) vs
+  where
+    f (CVPart policyId aname amount) acc =
+      insert (+) policyId aname (fromIntegral amount) acc
+
+dedup :: Ord a => Set a -> a -> a
+dedup xs x = fromMaybe x $ do
+  r <- Set.lookupLE x xs
+  guard (x == r)
+  pure r
 
 instance (Era era) => Torsor (Value era) where
   -- TODO a proper torsor form
@@ -253,8 +302,10 @@ showValue v = show c ++ "\n" ++ unlines (map trans ts)
         ++ show cnt
 
 gettriples :: Value era -> (Integer, [(PolicyID era, AssetName, Integer)])
-gettriples (Value c m1) = (c, foldr accum1 [] (assocs m1))
+gettriples (Value c m1) = (c, triples)
   where
-    accum1 (policy, m2) ans = foldr accum2 ans (assocs m2)
-      where
-        accum2 (asset, cnt) ans2 = (policy, asset, cnt) : ans2
+    triples =
+      [ (policyId, aname, amount)
+        | (policyId, m2) <- assocs m1,
+          (aname, amount) <- assocs m2
+      ]
