@@ -24,6 +24,8 @@ module Shelley.Spec.Ledger.Rewards
     leaderProbability,
     leaderRew,
     memberRew,
+    RewardProvenanceFlag (..),
+    RewardProvenancePool (..),
   )
 where
 
@@ -39,6 +41,7 @@ import Cardano.Ledger.Val ((<->))
 import Cardano.Slotting.Slot (EpochSize)
 import Control.DeepSeq (NFData)
 import Control.Iterate.SetAlgebra (eval, (◁))
+import Data.Coders (Decode (..), Encode (..), decode, encode, (!>), (<!))
 import Data.Foldable (find, fold)
 import Data.Function (on)
 import Data.List (sortBy)
@@ -368,6 +371,43 @@ memberRew (Coin f') pool (StakeShare t) (StakeShare sigma)
     (Coin c, m, _) = poolSpec pool
     m' = unitIntervalToRational m
 
+data RewardProvenanceFlag = WithoutRewardProvenance | WithRewardProvenance
+
+data RewardProvenancePool era = RewardProvenancePool
+  { provenancePoolBlocks :: Natural,
+    provenanceSigma :: Rational,
+    provenanceSigmaA :: Rational,
+    provenanceOwnerStake :: Coin,
+    provenancePoolParams :: PoolParams era,
+    provenancePledgeRatio :: Rational,
+    provenanceMaxP :: Coin,
+    provenanceAppPerf :: Rational,
+    provenancePoolR :: Coin,
+    --provenanceMRewards :: Map (Credential 'Staking era) Coin,
+    provenanceLReward :: Coin
+  }
+  deriving (Show, Eq, Generic)
+
+instance NoThunks (RewardProvenancePool era)
+
+instance NFData (RewardProvenancePool era)
+
+instance
+  Era era =>
+  ToCBOR (RewardProvenancePool era)
+  where
+  toCBOR (RewardProvenancePool p1 p2 p3 p4 p5 p6 p7 p8 p9 {-p10-} p11) =
+    encode $
+      Rec RewardProvenancePool !> To p1 !> To p2 !> To p3 !> To p4 !> To p5 !> To p6 !> To p7 !> To p8 !> To p9 !> {-To p10 !>-} To p11
+
+instance
+  Era era =>
+  FromCBOR (RewardProvenancePool era)
+  where
+  fromCBOR =
+    decode $
+      RecD RewardProvenancePool <! From <! From <! From <! From <! From <! From <! From <! From <! From <! From -- <! From
+
 -- | Reward one pool
 rewardOnePool ::
   PParams era ->
@@ -380,7 +420,10 @@ rewardOnePool ::
   Rational ->
   Coin ->
   Set (Credential 'Staking era) ->
-  Map (Credential 'Staking era) Coin
+  RewardProvenanceFlag ->
+  ( Map (Credential 'Staking era) Coin,
+    Maybe (KeyHash 'StakePool (Crypto era), RewardProvenancePool era)
+  )
 rewardOnePool
   pp
   r
@@ -391,8 +434,9 @@ rewardOnePool
   sigma
   sigmaA
   (Coin totalStake)
-  addrsRew =
-    rewards'
+  addrsRew
+  provFlag =
+    (rewards', provenance)
     where
       Coin ostake =
         Set.foldl'
@@ -435,6 +479,25 @@ rewardOnePool
       potentialRewards =
         f (getRwdCred $ _poolRAcnt pool) lReward mRewards
       rewards' = Map.filter (/= Coin 0) $ eval (addrsRew ◁ potentialRewards)
+      provenance = case provFlag of
+        WithoutRewardProvenance -> Nothing
+        WithRewardProvenance ->
+          Just
+            ( _poolId pool,
+              RewardProvenancePool
+                { provenancePoolBlocks = blocksN,
+                  provenanceSigma = sigma,
+                  provenanceSigmaA = sigmaA,
+                  provenanceOwnerStake = Coin ostake,
+                  provenancePoolParams = pool,
+                  provenancePledgeRatio = pr,
+                  provenanceMaxP = Coin maxP,
+                  provenanceAppPerf = appPerf,
+                  provenancePoolR = poolR,
+                  --provenanceMRewards = mRewards,
+                  provenanceLReward = lReward
+                }
+            )
 
 reward ::
   PParams era ->
@@ -447,10 +510,12 @@ reward ::
   Coin ->
   ActiveSlotCoeff ->
   EpochSize ->
+  RewardProvenanceFlag ->
   ( Map
       (Credential 'Staking era)
       Coin,
-    Map (KeyHash 'StakePool (Crypto era)) Likelihood
+    Map (KeyHash 'StakePool (Crypto era)) Likelihood,
+    Maybe (Map (KeyHash 'StakePool (Crypto era)) (RewardProvenancePool era))
   )
 reward
   pp
@@ -462,7 +527,8 @@ reward
   delegs
   (Coin totalStake)
   asc
-  slotsPerEpoch = (rewards', hs)
+  slotsPerEpoch
+  provFlag = (rewards'', hs, provenance)
     where
       totalBlocks = sum b
       Coin activeStake = fold . unStake $ stake
@@ -488,6 +554,7 @@ reward
                     sigmaA
                     (Coin totalStake)
                     addrsRew
+                    provFlag
             ls =
               likelihood
                 (fromMaybe 0 blocksProduced)
@@ -498,8 +565,13 @@ reward
         if HardForks.aggregatedRewards pp
           then Map.unionsWith (<>)
           else Map.unions
-      rewards' = f . catMaybes $ fmap (\(_, x, _) -> x) results
+      rewards' = catMaybes $ fmap (\(_, x, _) -> x) results
+      rewards'' = f . (fmap fst) $ rewards'
       hs = Map.fromList $ fmap (\(hk, _, l) -> (hk, l)) results
+      provenance =
+        case provFlag of
+          WithoutRewardProvenance -> Nothing
+          WithRewardProvenance -> Just . Map.fromList . catMaybes . (fmap snd) $ rewards'
 
 -- | Compute the Non-Myopic Pool Stake
 --

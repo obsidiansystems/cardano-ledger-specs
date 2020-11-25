@@ -112,6 +112,7 @@ import Control.DeepSeq (NFData)
 import Control.Monad.Trans.Reader (asks)
 import Control.SetAlgebra (Bimap, biMapEmpty, dom, eval, forwards, range, (∈), (∪+), (▷), (◁))
 import qualified Data.ByteString.Lazy as BSL (length)
+import Data.Coders (Decode (..), Encode (..), decode, encode, (!>), (<!))
 import Data.Coerce (coerce)
 import Data.Foldable (fold, toList)
 import Data.Group (invert)
@@ -122,6 +123,7 @@ import Data.Ratio ((%))
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 import GHC.Records (HasField (..))
 import NoThunks.Class (NoThunks (..))
@@ -189,6 +191,8 @@ import Shelley.Spec.Ledger.PParams
 import Shelley.Spec.Ledger.Rewards
   ( Likelihood (..),
     NonMyopic (..),
+    RewardProvenanceFlag (..),
+    RewardProvenancePool (..),
     applyDecay,
     emptyNonMyopic,
     reward,
@@ -196,7 +200,7 @@ import Shelley.Spec.Ledger.Rewards
 import Shelley.Spec.Ledger.Serialization (decodeRecordNamed, mapFromCBOR, mapToCBOR)
 import Shelley.Spec.Ledger.Slot
   ( EpochNo (..),
-    EpochSize,
+    EpochSize (..),
     SlotNo (..),
   )
 import Shelley.Spec.Ledger.Tx
@@ -390,6 +394,80 @@ instance
       ds <- fromCBOR
       ps <- fromCBOR
       pure $ DPState ds ps
+
+data RewardProvenance era = RewardProvenance
+  { provenanceSPE :: Word64,
+    provenanceBlocks :: BlocksMade era,
+    provenanceMaxLL :: Coin,
+    provenancedeltaR1 :: Coin,
+    provenancedeltaR2 :: Coin,
+    provenanceR :: Coin,
+    provenanceTotalStake :: Coin,
+    provenanceblocksCount :: Integer,
+    provenanceD :: Rational,
+    provenanceExpBlocks :: Integer,
+    provenanceEta :: Rational,
+    provenanceRPot :: Coin,
+    provenanceDeltaT1 :: Coin,
+    provenanceActiveStake :: Coin,
+    provenancePools ::
+      Maybe
+        ( Map
+            (KeyHash 'StakePool (Crypto era))
+            (RewardProvenancePool era)
+        )
+  }
+  deriving (Show, Eq, Generic)
+
+instance NoThunks (RewardProvenance era)
+
+instance NFData (RewardProvenance era)
+
+instance
+  Era era =>
+  ToCBOR (RewardProvenance era)
+  where
+  toCBOR (RewardProvenance p1 p2 p3 p4 p5 p6 p7 p8 p9 p10 p11 p12 p13 p14 p15) =
+    encode $
+      Rec RewardProvenance
+        !> To p1
+        !> To p2
+        !> To p3
+        !> To p4
+        !> To p5
+        !> To p6
+        !> To p7
+        !> To p8
+        !> To p9
+        !> To p10
+        !> To p11
+        !> To p12
+        !> To p13
+        !> To p14
+        !> To p15
+
+instance
+  Era era =>
+  FromCBOR (RewardProvenance era)
+  where
+  fromCBOR =
+    decode $
+      RecD RewardProvenance
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
+        <! From
 
 data RewardUpdate era = RewardUpdate
   { deltaT :: !DeltaCoin,
@@ -1066,54 +1144,83 @@ createRUpd ::
   BlocksMade era ->
   EpochState era ->
   Coin ->
-  ShelleyBase (RewardUpdate era)
-createRUpd slotsPerEpoch b@(BlocksMade b') es@(EpochState acnt ss ls pr _ nm) maxSupply = do
-  asc <- asks activeSlotCoeff
-  let SnapShot stake' delegs' poolParams = _pstakeGo ss
-      Coin reserves = _reserves acnt
-      ds = _dstate $ _delegationState ls
-      -- reserves and rewards change
-      deltaR1 =
-        ( rationalToCoinViaFloor $
-            min 1 eta
-              * unitIntervalToRational (_rho pr)
-              * fromIntegral reserves
-        )
-      d = unitIntervalToRational (_d pr)
-      expectedBlocks =
-        floor $
-          (1 - d) * unitIntervalToRational (activeSlotVal asc) * fromIntegral slotsPerEpoch
-      -- TODO asc is a global constant, and slotsPerEpoch should not change often at all,
-      -- it would be nice to not have to compute expectedBlocks every epoch
-      eta
-        | intervalValue (_d pr) >= 0.8 = 1
-        | otherwise = blocksMade % expectedBlocks
-      Coin rPot = _feeSS ss <> deltaR1
-      deltaT1 = floor $ intervalValue (_tau pr) * fromIntegral rPot
-      _R = Coin $ rPot - deltaT1
-      totalStake = circulation es maxSupply
-      (rs_, newLikelihoods) =
-        reward
-          pr
-          b
-          _R
-          (Map.keysSet $ _rewards ds)
-          poolParams
-          stake'
-          delegs'
-          totalStake
-          asc
-          slotsPerEpoch
-      deltaR2 = _R <-> (Map.foldr (<+>) mempty rs_)
-      blocksMade = fromIntegral $ Map.foldr (+) 0 b' :: Integer
-  pure $
-    RewardUpdate
-      { deltaT = (DeltaCoin deltaT1),
-        deltaR = ((invert $ toDeltaCoin deltaR1) <> toDeltaCoin deltaR2),
-        rs = rs_,
-        deltaF = (invert (toDeltaCoin $ _feeSS ss)),
-        nonMyopic = (updateNonMypopic nm _R newLikelihoods)
-      }
+  RewardProvenanceFlag ->
+  ShelleyBase (RewardUpdate era, StrictMaybe (RewardProvenance era))
+createRUpd
+  slotsPerEpoch
+  b@(BlocksMade b')
+  es@(EpochState acnt ss ls pr _ nm)
+  maxSupply
+  provFlag = do
+    asc <- asks activeSlotCoeff
+    let SnapShot stake' delegs' poolParams = _pstakeGo ss
+        Coin reserves = _reserves acnt
+        ds = _dstate $ _delegationState ls
+        -- reserves and rewards change
+        deltaR1 =
+          ( rationalToCoinViaFloor $
+              min 1 eta
+                * unitIntervalToRational (_rho pr)
+                * fromIntegral reserves
+          )
+        d = unitIntervalToRational (_d pr)
+        expectedBlocks =
+          floor $
+            (1 - d) * unitIntervalToRational (activeSlotVal asc) * fromIntegral slotsPerEpoch
+        -- TODO asc is a global constant, and slotsPerEpoch should not change often at all,
+        -- it would be nice to not have to compute expectedBlocks every epoch
+        eta
+          | intervalValue (_d pr) >= 0.8 = 1
+          | otherwise = blocksMade % expectedBlocks
+        Coin rPot = _feeSS ss <> deltaR1
+        deltaT1 = floor $ intervalValue (_tau pr) * fromIntegral rPot
+        _R = Coin $ rPot - deltaT1
+        totalStake = circulation es maxSupply
+        (rs_, newLikelihoods, provPools) =
+          reward
+            pr
+            b
+            _R
+            (Map.keysSet $ _rewards ds)
+            poolParams
+            stake'
+            delegs'
+            totalStake
+            asc
+            slotsPerEpoch
+            provFlag
+        deltaR2 = _R <-> (Map.foldr (<+>) mempty rs_)
+        blocksMade = fromIntegral $ Map.foldr (+) 0 b' :: Integer
+    pure $
+      ( RewardUpdate
+          { deltaT = (DeltaCoin deltaT1),
+            deltaR = ((invert $ toDeltaCoin deltaR1) <> toDeltaCoin deltaR2),
+            rs = rs_,
+            deltaF = (invert (toDeltaCoin $ _feeSS ss)),
+            nonMyopic = (updateNonMypopic nm _R newLikelihoods)
+          },
+        case provFlag of
+          WithoutRewardProvenance -> SNothing
+          WithRewardProvenance ->
+            SJust $
+              RewardProvenance
+                { provenanceSPE = unEpochSize slotsPerEpoch,
+                  provenanceBlocks = b,
+                  provenanceMaxLL = maxSupply,
+                  provenancedeltaR1 = deltaR1,
+                  provenancedeltaR2 = deltaR2,
+                  provenanceR = _R,
+                  provenanceTotalStake = totalStake,
+                  provenanceblocksCount = blocksMade,
+                  provenanceD = d,
+                  provenanceExpBlocks = expectedBlocks,
+                  provenanceEta = eta,
+                  provenanceRPot = Coin rPot,
+                  provenanceDeltaT1 = Coin deltaT1,
+                  provenanceActiveStake = fold . unStake $ stake',
+                  provenancePools = provPools
+                }
+      )
 
 -- | Calculate the current circulation
 --
