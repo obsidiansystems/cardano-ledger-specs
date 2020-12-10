@@ -12,6 +12,8 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
+
 
 module Cardano.Ledger.Alonzo.TxBody
   ( IsFee (..),
@@ -34,16 +36,18 @@ module Cardano.Ledger.Alonzo.TxBody
   )
 where
 
+import Prelude hiding (lookup)
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Ledger.Alonzo.Data (DataHash)
 import Cardano.Ledger.Alonzo.Scripts (ExUnits)
-import Cardano.Ledger.Alonzo.TxWitness (ScriptDataHash)
+import qualified Cardano.Ledger.Alonzo.Scripts as AlonzoScript(Tag(..))
+import Cardano.Ledger.Alonzo.TxWitness (ScriptDataHash, RdmrPtr(..))
 import Cardano.Ledger.AuxiliaryData (AuxiliaryDataHash)
 import Cardano.Ledger.Compactible
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Crypto as CC
 import Cardano.Ledger.Era (Crypto, Era)
-import Cardano.Ledger.Mary.Value (Value)
+import Cardano.Ledger.Mary.Value (Value(..),PolicyID,AssetName,lookup)
 import Cardano.Ledger.ShelleyMA.Timelocks (ValidityInterval (..))
 import Cardano.Ledger.Val
   ( DecodeMint,
@@ -61,10 +65,13 @@ import Data.MemoBytes (Mem, MemoBytes (..), memoBytes)
 import Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as StrictSeq
 import Data.Set (Set)
+import qualified Data.Set as Set
+import qualified Data.Map as Map(Map,findIndex)
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 import NoThunks.Class (InspectHeapNamed (..), NoThunks)
+import Shelley.Spec.Ledger.Address(RewardAcnt)
 import Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import Shelley.Spec.Ledger.Coin (Coin)
 import Shelley.Spec.Ledger.CompactAddr (CompactAddr)
@@ -196,15 +203,18 @@ deriving via
     ) =>
     FromCBOR (Annotator (TxBody era))
 
-pattern TxBody ::
-  ( Era era,
+
+type AlonzoBody era =
+   ( Era era,
     Typeable (Core.AuxiliaryData era),
     Typeable (Core.Script era),
     ToCBOR (CompactForm (Core.Value era)),
     ToCBOR (Core.Script era),
     EncodeMint (Core.Value era),
     Val (Core.Value era)
-  ) =>
+  )
+
+pattern TxBody :: AlonzoBody era =>
   Set (TxIn (Crypto era)) ->
   StrictSeq (TxOut era) ->
   StrictSeq (DCert (Crypto era)) ->
@@ -453,3 +463,47 @@ instance
   FromCBOR (Annotator (TxBodyRaw era))
   where
   fromCBOR = pure <$> fromCBOR
+
+
+-- ===========================================
+
+data ScriptPurpose crypto
+   = Minting !(PolicyID crypto)
+   | Spending !(TxIn crypto)
+   | Rewarding !(RewardAcnt crypto)   -- Not sure if this is the right type.
+   | Certifying !(DCert crypto)
+
+
+txins :: AlonzoBody era => TxBody era -> Set (TxId (Crypto era), Word64)
+txins (TxBody{inputs = is}) = Set.foldl' accum Set.empty is
+  where accum ans (TxInCompact id index _) = Set.insert (id,index) ans
+
+txinputs_vf :: AlonzoBody era => TxBody era -> Set (TxId (Crypto era), Word64)
+txinputs_vf (TxBody{inputs = is}) = Set.foldl' accum Set.empty is
+  where accum ans (TxInCompact id index (IsFee True)) = Set.insert (id,index) ans
+        accum ans _ = ans
+
+class Indexable key container where
+   indexof :: key -> container -> Word64
+
+instance Ord k => Indexable k (Set k) where
+   indexof n set = fromIntegral $ Set.findIndex n set
+
+instance Eq k => Indexable k (StrictSeq k) where
+   indexof n seq = case StrictSeq.findIndexL (==n) seq of
+     Just n -> fromIntegral n
+     Nothing -> error("Not found in StrictSeq")
+
+instance Ord k => Indexable k (Map.Map k v) where
+   indexof n set = fromIntegral $ Map.findIndex n set
+
+toRdmrPtrFromBody ::
+  ( AlonzoBody era, Core.Value era ~ Value (Crypto era) )
+  =>  TxBody era -> ScriptPurpose (Crypto era) -> RdmrPtr
+toRdmrPtrFromBody txbody (Minting pid) =  RdmrPtr AlonzoScript.Mint (indexof pid (getMapFromValue(mint txbody)))
+toRdmrPtrFromBody txbody (Spending txin) =  RdmrPtr AlonzoScript.Spend (indexof txin (inputs txbody))
+toRdmrPtrFromBody txbody (Rewarding racnt) = RdmrPtr AlonzoScript.Rewrd (indexof racnt (unWdrl(wdrls txbody)))
+toRdmrPtrFromBody txbody (Certifying d) = RdmrPtr AlonzoScript.Cert (indexof d (certs txbody))
+
+getMapFromValue:: Value crypto -> Map.Map (PolicyID crypto) (Map.Map AssetName Integer)
+getMapFromValue (Value _ m) = m

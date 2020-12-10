@@ -23,7 +23,7 @@ instance Arbitrary (Data era) where
   arbitrary = pure NotReallyData
 
 instance Arbitrary Tag where
-  arbitrary = elements [Input, Mint, Cert, Wdrl]
+  arbitrary = elements [Spend, Mint, Cert, Rewrd]
 
 instance Arbitrary RdmrPtr where
   arbitrary = RdmrPtr <$> arbitrary <*> arbitrary
