@@ -66,7 +66,7 @@ import Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as StrictSeq
 import Data.Set (Set)
 import qualified Data.Set as Set
-import qualified Data.Map as Map(Map,findIndex)
+import qualified Data.Map as Map(Map,findIndex,elemAt)
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
@@ -483,27 +483,33 @@ txinputs_vf (TxBody{inputs = is}) = Set.foldl' accum Set.empty is
   where accum ans (TxInCompact id index (IsFee True)) = Set.insert (id,index) ans
         accum ans _ = ans
 
-class Indexable key container where
-   indexof :: key -> container -> Word64
+class Indexable elem container where
+   indexOf :: elem -> container -> Word64
+   atIndex :: Word64 -> container -> elem
 
 instance Ord k => Indexable k (Set k) where
-   indexof n set = fromIntegral $ Set.findIndex n set
+   indexOf n set = fromIntegral $ Set.findIndex n set
+   atIndex i set = Set.elemAt (fromIntegral i) set
 
 instance Eq k => Indexable k (StrictSeq k) where
-   indexof n seq = case StrictSeq.findIndexL (==n) seq of
-     Just n -> fromIntegral n
-     Nothing -> error("Not found in StrictSeq")
+   indexOf n seq = case StrictSeq.findIndexL (==n) seq of
+      Just n -> fromIntegral n
+      Nothing -> error("Not found in StrictSeq")
+   atIndex i seq = case StrictSeq.lookup (fromIntegral i) seq of
+      Just elem -> elem
+      Nothing -> error ("No elem at index "++show i)
 
 instance Ord k => Indexable k (Map.Map k v) where
-   indexof n set = fromIntegral $ Map.findIndex n set
+   indexOf n mp = fromIntegral $ Map.findIndex n mp
+   atIndex i mp = fst(Map.elemAt (fromIntegral i) mp)  -- If one needs the value, on can use Map.Lookup
 
 toRdmrPtrFromBody ::
   ( AlonzoBody era, Core.Value era ~ Value (Crypto era) )
   =>  TxBody era -> ScriptPurpose (Crypto era) -> RdmrPtr
-toRdmrPtrFromBody txbody (Minting pid) =  RdmrPtr AlonzoScript.Mint (indexof pid (getMapFromValue(mint txbody)))
-toRdmrPtrFromBody txbody (Spending txin) =  RdmrPtr AlonzoScript.Spend (indexof txin (inputs txbody))
-toRdmrPtrFromBody txbody (Rewarding racnt) = RdmrPtr AlonzoScript.Rewrd (indexof racnt (unWdrl(wdrls txbody)))
-toRdmrPtrFromBody txbody (Certifying d) = RdmrPtr AlonzoScript.Cert (indexof d (certs txbody))
+toRdmrPtrFromBody txbody (Minting pid) =  RdmrPtr AlonzoScript.Mint (indexOf pid (getMapFromValue(mint txbody)))
+toRdmrPtrFromBody txbody (Spending txin) =  RdmrPtr AlonzoScript.Spend (indexOf txin (inputs txbody))
+toRdmrPtrFromBody txbody (Rewarding racnt) = RdmrPtr AlonzoScript.Rewrd (indexOf racnt (unWdrl(wdrls txbody)))
+toRdmrPtrFromBody txbody (Certifying d) = RdmrPtr AlonzoScript.Cert (indexOf d (certs txbody))
 
 getMapFromValue:: Value crypto -> Map.Map (PolicyID crypto) (Map.Map AssetName Integer)
 getMapFromValue (Value _ m) = m
