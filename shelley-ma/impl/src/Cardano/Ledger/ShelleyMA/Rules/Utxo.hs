@@ -17,10 +17,8 @@ module Cardano.Ledger.ShelleyMA.Rules.Utxo where
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..), encodeListLen)
 import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Crypto as CryptoClass
 import Cardano.Ledger.Era (Crypto)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
-import Cardano.Ledger.ShelleyMA (MaryOrAllegra, ShelleyMAEra)
 import Cardano.Ledger.ShelleyMA.Timelocks
 import Cardano.Ledger.ShelleyMA.TxBody (TxBody)
 import Cardano.Ledger.Torsor (Torsor (..))
@@ -41,7 +39,6 @@ import qualified Data.Map.Strict as Map
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Typeable
 import Data.Word (Word8)
 import GHC.Generics (Generic)
 import GHC.Records
@@ -58,10 +55,10 @@ import Shelley.Spec.Ledger.BaseTypes
     networkId,
   )
 import Shelley.Spec.Ledger.Coin
+import Shelley.Spec.Ledger.LedgerState (PPUPState)
 import qualified Shelley.Spec.Ledger.LedgerState as Shelley
 import Shelley.Spec.Ledger.PParams (PParams, PParams' (..), Update)
-import Shelley.Spec.Ledger.STS.Ppup (PPUP, PPUPEnv (..))
-import Shelley.Spec.Ledger.STS.Utxo (UTXO)
+import Shelley.Spec.Ledger.STS.Ppup (PPUP, PPUPEnv (..), PpupPredicateFailure)
 import qualified Shelley.Spec.Ledger.STS.Utxo as Shelley
 import Shelley.Spec.Ledger.Tx (Tx (..), TxIn)
 import Shelley.Spec.Ledger.TxBody
@@ -105,21 +102,29 @@ data UtxoPredicateFailure era
       !(Set (RewardAcnt (Crypto era))) -- the set of reward addresses with incorrect network IDs
   | OutputTooSmallUTxO
       ![TxOut era] -- list of supplied transaction outputs that are too small
-  | UpdateFailure (PredicateFailure (PPUP era)) -- Subtransition Failures
+  | UpdateFailure (PredicateFailure (Core.EraRule "PPUP" era)) -- Subtransition Failures
   | OutputBootAddrAttrsTooBig
       ![TxOut era] -- list of supplied bad transaction outputs
   | TriesToForgeADA
   deriving (Generic)
 
 deriving stock instance
-  ShelleyBased era =>
+  ( ShelleyBased era,
+    Show (PredicateFailure (Core.EraRule "PPUP" era))
+  ) =>
   Show (UtxoPredicateFailure era)
 
 deriving stock instance
-  ShelleyBased era =>
+  ( ShelleyBased era,
+    Eq (PredicateFailure (Core.EraRule "PPUP" era))
+  ) =>
   Eq (UtxoPredicateFailure era)
 
-instance NoThunks (Delta (Core.Value era)) => NoThunks (UtxoPredicateFailure era)
+instance
+  ( NoThunks (Delta (Core.Value era)),
+    NoThunks (PredicateFailure (Core.EraRule "PPUP" era))
+  ) =>
+  NoThunks (UtxoPredicateFailure era)
 
 -- | Calculate the value consumed by the transation.
 --
@@ -156,12 +161,10 @@ utxoTransition ::
   forall era.
   ( ShelleyBased era,
     STS (UTXO era),
-    Embed (PPUP era) (UTXO era),
-    BaseM (UTXO era) ~ ShelleyBase,
-    Environment (UTXO era) ~ Shelley.UtxoEnv era,
-    State (UTXO era) ~ Shelley.UTxOState era,
-    Signal (UTXO era) ~ Tx era,
-    PredicateFailure (UTXO era) ~ UtxoPredicateFailure era,
+    Embed (Core.EraRule "PPUP" era) (UTXO era),
+    Environment (Core.EraRule "PPUP" era) ~ PPUPEnv era,
+    State (Core.EraRule "PPUP" era) ~ PPUPState era,
+    Signal (Core.EraRule "PPUP" era) ~ Maybe (Update era),
     HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
     HasField "mint" (Core.TxBody era) (Core.Value era),
@@ -209,7 +212,9 @@ utxoTransition = do
   consumed_ == produced_ ?! ValueNotConservedUTxO (toDelta consumed_) (toDelta produced_)
 
   -- process Protocol Parameter Update Proposals
-  ppup' <- trans @(PPUP era) $ TRC (PPUPEnv slot pp genDelegs, ppup, txup tx)
+  ppup' <-
+    trans @(Core.EraRule "PPUP" era) $
+      TRC (PPUPEnv slot pp genDelegs, ppup, txup tx)
 
   -- Check that the mint field does not try to mint ADA. This is equivalent to
   -- the check `adaPolicy ∉ supp mint tx` in the spec.
@@ -249,39 +254,44 @@ utxoTransition = do
     Shelley.UTxOState
       { Shelley._utxo = eval ((txins @era txb ⋪ utxo) ∪ txouts txb),
         Shelley._deposited = deposits' <> depositChange,
-        Shelley._fees = fees <> (getField @"txfee" txb),
+        Shelley._fees = fees <> getField @"txfee" txb,
         Shelley._ppups = ppup'
       }
 
 --------------------------------------------------------------------------------
 -- UTXO STS
 --------------------------------------------------------------------------------
+data UTXO era
 
 instance
-  forall c (ma :: MaryOrAllegra).
-  ( CryptoClass.Crypto c,
-    Typeable ma,
-    ShelleyBased (ShelleyMAEra ma c),
-    Core.TxBody (ShelleyMAEra ma c) ~ TxBody (ShelleyMAEra ma c)
+  forall era.
+  ( ShelleyBased era,
+    Core.TxBody era ~ TxBody era,
+    Embed (Core.EraRule "PPUP" era) (UTXO era),
+    Environment (Core.EraRule "PPUP" era) ~ PPUPEnv era,
+    State (Core.EraRule "PPUP" era) ~ PPUPState era,
+    Signal (Core.EraRule "PPUP" era) ~ Maybe (Update era)
   ) =>
-  STS (UTXO (ShelleyMAEra ma c))
+  STS (UTXO era)
   where
-  type State (UTXO (ShelleyMAEra ma c)) = Shelley.UTxOState (ShelleyMAEra ma c)
-  type Signal (UTXO (ShelleyMAEra ma c)) = Tx (ShelleyMAEra ma c)
+  type State (UTXO era) = Shelley.UTxOState era
+  type Signal (UTXO era) = Tx era
   type
-    Environment (UTXO (ShelleyMAEra ma c)) =
-      Shelley.UtxoEnv (ShelleyMAEra ma c)
-  type BaseM (UTXO (ShelleyMAEra ma c)) = ShelleyBase
+    Environment (UTXO era) =
+      Shelley.UtxoEnv era
+  type BaseM (UTXO era) = ShelleyBase
   type
-    PredicateFailure (UTXO (ShelleyMAEra ma c)) =
-      UtxoPredicateFailure (ShelleyMAEra ma c)
+    PredicateFailure (UTXO era) =
+      UtxoPredicateFailure era
 
   initialRules = []
   transitionRules = [utxoTransition]
 
 instance
-  (CryptoClass.Crypto c, Typeable ma) =>
-  Embed (PPUP (ShelleyMAEra (ma :: MaryOrAllegra) c)) (UTXO (ShelleyMAEra ma c))
+  ( ShelleyBased era,
+    PredicateFailure (Core.EraRule "PPUP" era) ~ PpupPredicateFailure era
+  ) =>
+  Embed (PPUP era) (UTXO era)
   where
   wrapFailed = UpdateFailure
 
@@ -289,7 +299,9 @@ instance
 -- Serialisation
 --------------------------------------------------------------------------------
 instance
-  ShelleyBased era =>
+  ( ShelleyBased era,
+    ToCBOR (PredicateFailure (Core.EraRule "PPUP" era))
+  ) =>
   ToCBOR (UtxoPredicateFailure era)
   where
   toCBOR = \case
@@ -332,7 +344,9 @@ instance
     TriesToForgeADA -> encodeListLen 1 <> toCBOR (11 :: Word8)
 
 instance
-  ShelleyBased era =>
+  ( ShelleyBased era,
+    FromCBOR (PredicateFailure (Core.EraRule "PPUP" era))
+  ) =>
   FromCBOR (UtxoPredicateFailure era)
   where
   fromCBOR =
