@@ -42,6 +42,7 @@ import Shelley.Spec.Ledger.Slot
     epochInfoSize,
     (+*),
   )
+import Debug.Trace (trace)
 
 data RUPD era
 
@@ -66,24 +67,24 @@ instance Typeable era => STS (RUPD era) where
 rupdTransition :: Typeable era => TransitionRule (RUPD era)
 rupdTransition = do
   TRC (RupdEnv b es, ru, s) <- judgmentContext
-  (slotsPerEpoch, slot, maxLL) <- liftSTS $ do
+  (slotsPerEpoch, slot, maxLL, e) <- liftSTS $ do
     ei <- asks epochInfo
     sr <- asks randomnessStabilisationWindow
     e <- epochInfoEpoch ei s
     slotsPerEpoch <- epochInfoSize ei e
     slot <- epochInfoFirst ei e <&> (+* (Duration sr))
     maxLL <- asks maxLovelaceSupply
-    return (slotsPerEpoch, slot, maxLL)
+    return (slotsPerEpoch, slot, maxLL, e)
   if s <= slot
-    then pure ru
+    then pure (trace ("AGGREGATEREWARDS:EPOCH:TOOSOON " ++ show e ++ " " ++ show slot) ru)
     else case ru of
       SNothing ->
         SJust
           <$> ( liftSTS $
                   createRUpd
                     slotsPerEpoch
-                    b
+                    (trace ("AGGREGATEREWARDS:EPOCH:SLOT " ++ show e ++ " " ++ show slot) b)
                     es
                     (Coin $ fromIntegral maxLL)
               )
-      SJust _ -> pure ru
+      SJust _ -> pure (trace ("AGGREGATEREWARDS:EPOCH:ALREADYDONE " ++ show e ++ " " ++ show slot) ru)

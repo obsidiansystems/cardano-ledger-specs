@@ -83,6 +83,7 @@ import Shelley.Spec.Ledger.Serialization
     encodeFoldable,
   )
 import Shelley.Spec.Ledger.TxBody (PoolParams (..), getRwdCred)
+import Debug.Trace (trace)
 
 newtype LogWeight = LogWeight {unLogWeight :: Float}
   deriving (Eq, Generic, Ord, Num, NFData, NoThunks, ToCBOR, FromCBOR)
@@ -432,8 +433,13 @@ rewardOnePool
         if HardForks.aggregatedRewards pp
           then Map.insertWith (<>)
           else Map.insert
+      poolRA = getRwdCred $ _poolRAcnt pool
+      mRewards' =
+        case Map.lookup poolRA mRewards of
+          Nothing -> trace ("AGGREGATEREWARDS:MEMBER:NO") mRewards
+          Just c -> trace ("AGGREGATEREWARDS:MEMBER:YES " ++ show poolRA ++ " " ++ show c) mRewards
       potentialRewards =
-        f (getRwdCred $ _poolRAcnt pool) lReward mRewards
+        f poolRA lReward mRewards'
       rewards' = Map.filter (/= Coin 0) $ eval (addrsRew ◁ potentialRewards)
 
 reward ::
@@ -462,7 +468,7 @@ reward
   delegs
   (Coin totalStake)
   asc
-  slotsPerEpoch = (rewards', hs)
+  slotsPerEpoch = (rewards'', hs)
     where
       totalBlocks = sum b
       Coin activeStake = fold . unStake $ stake
@@ -498,7 +504,16 @@ reward
         if HardForks.aggregatedRewards pp
           then Map.unionsWith (<>)
           else Map.unions
-      rewards' = f . catMaybes $ fmap (\(_, x, _) -> x) results
+      tmp = catMaybes $ fmap (\(_, x, _) -> x) results
+      aggred = Map.differenceWith
+                (\x y -> if x == y then Nothing else Just (Coin $ unCoin y - unCoin x))
+                (Map.unions tmp)
+                (Map.unionsWith (<>) tmp)
+      rewards' = f tmp
+      rewards'' =
+        if aggred == mempty
+          then trace ("AGGREGATEREWARDS:LEADER:NO") rewards'
+          else trace ("AGGREGATEREWARDS:LEADER:YES " ++ show aggred) rewards'
       hs = Map.fromList $ fmap (\(hk, _, l) -> (hk, l)) results
 
 -- | Compute the Non-Myopic Pool Stake
