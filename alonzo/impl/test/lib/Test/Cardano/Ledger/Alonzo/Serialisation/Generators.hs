@@ -18,11 +18,12 @@ import Cardano.Ledger.Alonzo.TxBody
     TxBody (TxBody),
     TxIn (..),
     TxOut (..),
+    PPHash (..)
   )
 import Cardano.Ledger.Alonzo.TxWitness
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Crypto as CC
-import Cardano.Ledger.Era (Crypto, Era)
+import Cardano.Ledger.Era (Crypto)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
 import Test.Cardano.Ledger.ShelleyMA.Serialisation.Generators (genMintValues)
 import Test.QuickCheck
@@ -59,7 +60,9 @@ instance
 
 deriving newtype instance CC.Crypto c => Arbitrary (ScriptDataHash c)
 
-deriving newtype instance Era era => Arbitrary (DataHash era)
+deriving newtype instance CC.Crypto c => Arbitrary (DataHash c)
+
+deriving newtype instance CC.Crypto c => Arbitrary (PPHash c)
 
 deriving newtype instance Arbitrary IsFee
 
@@ -76,6 +79,7 @@ instance
 
 instance
   ( ShelleyBased era,
+    CC.Crypto era,
     Mock (Crypto era),
     Arbitrary (Core.Value era)
   ) =>
@@ -88,7 +92,7 @@ instance
       <*> arbitrary
 
 instance
-  (Mock c) =>
+  (Mock c, CC.Crypto (AlonzoEra c)) =>
   Arbitrary (TxBody (AlonzoEra c))
   where
   arbitrary =
@@ -104,10 +108,11 @@ instance
       <*> genMintValues
       <*> arbitrary
       <*> arbitrary
+      <*> arbitrary
 
 deriving newtype instance Arbitrary IsValidating
 
-instance Mock c => Arbitrary (Tx (AlonzoEra c)) where
+instance (Mock c, CC.Crypto (AlonzoEra c)) => Arbitrary (Tx (AlonzoEra c)) where
   arbitrary =
     Tx
       <$> arbitrary

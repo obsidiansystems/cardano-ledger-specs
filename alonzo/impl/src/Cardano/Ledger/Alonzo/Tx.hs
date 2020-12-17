@@ -16,6 +16,8 @@ module Cardano.Ledger.Alonzo.Tx
   )
 where
 
+import qualified Cardano.Ledger.Crypto as CC
+import Cardano.Ledger.Alonzo.Data (Data (..))
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Ledger.Alonzo.TxBody (TxBody)
 import Cardano.Ledger.Alonzo.TxWitness (TxWitness)
@@ -142,6 +144,8 @@ encodeTxRaw TxRaw {_body, _wits, _isValidating, _auxiliaryData} =
 
 instance
   ( Era era,
+    CC.Crypto era,
+    FromCBOR (Annotator (Data era)),
     FromCBOR (Annotator (Core.Script era)),
     FromCBOR (Annotator (Core.AuxiliaryData era)),
     ToCBOR (Core.Script era),
@@ -170,6 +174,8 @@ deriving via
   Mem (TxRaw era)
   instance
     ( Era era,
+      CC.Crypto era,
+      FromCBOR (Annotator (Data era)),
       FromCBOR (Annotator (Core.Script era)),
       FromCBOR (Annotator (Core.AuxiliaryData era)),
       ToCBOR (Core.Script era),

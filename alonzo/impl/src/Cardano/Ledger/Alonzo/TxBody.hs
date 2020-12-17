@@ -18,6 +18,7 @@ module Cardano.Ledger.Alonzo.TxBody
   ( IsFee (..),
     TxIn (..),
     TxOut (TxOut, TxOutCompact),
+    PPHash (..),
     TxBody
       ( TxBody,
         inputs,
@@ -30,11 +31,14 @@ module Cardano.Ledger.Alonzo.TxBody
         adHash,
         mint,
         exunits,
+        ppHash,
         scriptHash
       ),
   )
 where
 
+import qualified Cardano.Crypto.Hash as Hash
+import Cardano.Ledger.Crypto (HASH)
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Ledger.Alonzo.Data (DataHash)
 import Cardano.Ledger.Alonzo.Scripts (ExUnits)
@@ -158,6 +162,19 @@ pattern TxOut addr vl dh <-
 
 {-# COMPLETE TxOut #-}
 
+data EraIndependentPP
+
+-- Hash of a subset of Protocol Parameters relevant to Plutus script evaluation
+newtype PPHash crypto
+  = PPHash
+      (Hash.Hash (HASH crypto) EraIndependentPP)
+  deriving (Show, Eq, Ord, Generic)
+  deriving newtype (NFData, NoThunks)
+
+deriving newtype instance CC.Crypto crypto => FromCBOR (PPHash crypto)
+
+deriving newtype instance CC.Crypto crypto => ToCBOR (PPHash crypto)
+
 data TxBodyRaw era = TxBodyRaw
   { _inputs :: !(Set (TxIn (Crypto era))),
     _outputs :: !(StrictSeq (TxOut era)),
@@ -169,6 +186,7 @@ data TxBodyRaw era = TxBodyRaw
     _adHash :: !(StrictMaybe (AuxiliaryDataHash (Crypto era))),
     _mint :: !(Core.Value era),
     _exunits :: !ExUnits,
+    _ppHash :: !(StrictMaybe (PPHash (Crypto era))),
     _scriptHash :: !(StrictMaybe (ScriptDataHash (Crypto era)))
   }
   deriving (Generic, Typeable)
@@ -212,6 +230,7 @@ deriving via
   (Mem (TxBodyRaw era))
   instance
     ( Era era,
+      CC.Crypto era,
       Typeable (Core.Script era),
       Typeable (Core.AuxiliaryData era),
       Val (Core.Value era),
@@ -225,6 +244,7 @@ deriving via
 
 pattern TxBody ::
   ( Era era,
+    CC.Crypto era,
     Typeable (Core.AuxiliaryData era),
     ToCBOR (CompactForm (Core.Value era)),
     ToCBOR (Core.Script era),
@@ -241,6 +261,7 @@ pattern TxBody ::
   StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   Core.Value era ->
   ExUnits ->
+  StrictMaybe (PPHash (Crypto era)) ->
   StrictMaybe (ScriptDataHash (Crypto era)) ->
   TxBody era
 pattern TxBody
@@ -254,6 +275,7 @@ pattern TxBody
     adHash,
     mint,
     exunits,
+    ppHash,
     scriptHash
   } <-
   TxBodyConstr
@@ -269,6 +291,7 @@ pattern TxBody
             _adHash = adHash,
             _mint = mint,
             _exunits = exunits,
+            _ppHash = ppHash,
             _scriptHash = scriptHash
           }
         _
@@ -285,6 +308,7 @@ pattern TxBody
       adHash'
       mint'
       exunits'
+      ppHash'
       scriptHash' =
         TxBodyConstr $
           memoBytes
@@ -300,6 +324,7 @@ pattern TxBody
                   adHash'
                   mint'
                   exunits'
+                  ppHash'
                   scriptHash'
             )
 
@@ -324,7 +349,9 @@ instance CC.Crypto crypto => FromCBOR (TxIn crypto) where
   fromCBOR = decode $ RecD TxInCompact <! From <! From <! From
 
 instance
-  (Era era, ToCBOR (CompactForm (Core.Value era))) =>
+  (Era era,
+  CC.Crypto era,
+  ToCBOR (CompactForm (Core.Value era))) =>
   ToCBOR (TxOut era)
   where
   toCBOR (TxOutCompact addr cv dh) =
@@ -333,6 +360,7 @@ instance
 
 instance
   ( Era era,
+    CC.Crypto era,
     DecodeNonNegative (CompactForm (Core.Value era)),
     Compactible (Core.Value era)
   ) =>
@@ -347,6 +375,7 @@ instance
 
 encodeTxBodyRaw ::
   ( Era era,
+    CC.Crypto era,
     EncodeMint (Core.Value era),
     Val (Core.Value era),
     ToCBOR (CompactForm (Core.Value era))
@@ -365,6 +394,7 @@ encodeTxBodyRaw
       _adHash,
       _mint,
       _exunits,
+      _ppHash,
       _scriptHash
     } =
     Keyed
@@ -382,7 +412,8 @@ encodeTxBodyRaw
       !> encodeKeyedStrictMaybe 8 bot
       !> Omit isZero (Key 9 (E encodeMint _mint))
       !> Omit (== mempty) (Key 10 (To _exunits))
-      !> encodeKeyedStrictMaybe 11 _scriptHash
+      !> encodeKeyedStrictMaybe 11 _ppHash
+      !> encodeKeyedStrictMaybe 12 _scriptHash
     where
       encodeKeyedStrictMaybe key x =
         Omit isSNothing (Key key (E (toCBOR . fromSJust) x))
@@ -398,6 +429,7 @@ encodeTxBodyRaw
 instance
   forall era.
   ( Era era,
+    CC.Crypto era,
     Typeable (Core.Script era),
     Typeable (Core.AuxiliaryData era),
     Val (Core.Value era),
@@ -425,6 +457,7 @@ instance
           mempty
           mempty
           SNothing
+          SNothing
       bodyFields 0 =
         field
           (\x tx -> tx {_inputs = x})
@@ -451,7 +484,8 @@ instance
           (D (SJust <$> fromCBOR))
       bodyFields 9 = field (\x tx -> tx {_mint = x}) (D decodeMint)
       bodyFields 10 = field (\x tx -> tx {_exunits = x}) From
-      bodyFields 11 =
+      bodyFields 11 = field (\x tx -> tx {_ppHash = x}) (D (SJust <$> fromCBOR))
+      bodyFields 12 =
         field
           (\x tx -> tx {_scriptHash = x})
           (D (SJust <$> fromCBOR))
@@ -464,6 +498,7 @@ instance
 
 instance
   ( Era era,
+    CC.Crypto era,
     Typeable (Core.Script era),
     Typeable (Core.AuxiliaryData era),
     Val (Core.Value era),

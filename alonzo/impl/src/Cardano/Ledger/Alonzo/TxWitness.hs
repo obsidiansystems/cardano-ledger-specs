@@ -26,7 +26,7 @@ where
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import qualified Cardano.Crypto.Hash as Hash
-import Cardano.Ledger.Alonzo.Data (Data)
+import Cardano.Ledger.Alonzo.Data (Data, DataHash)
 import Cardano.Ledger.Alonzo.Scripts (Tag)
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Crypto (HASH)
@@ -35,6 +35,7 @@ import Cardano.Ledger.Era (Era (Crypto))
 import Control.DeepSeq (NFData)
 import Data.Coders
 import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.MemoBytes (Mem, MemoBytes (..), memoBytes)
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -95,7 +96,7 @@ pattern TxWitness ::
   Set (WitVKey 'Witness (Crypto era)) ->
   Set (BootstrapWitness (Crypto era)) ->
   Map (ScriptHash (Crypto era)) (Core.Script era) ->
-  Set (Data era) ->
+  Map (DataHash (Crypto era)) (Data era) ->
   Map RdmrPtr (Data era) ->
   TxWitness era
 pattern TxWitness
@@ -143,7 +144,7 @@ instance
       (a `Set.union` a')
       (b `Set.union` b')
       (c <> c')
-      (d `Set.union` d')
+      (d <> d')
       (e <> e')
 
 instance
@@ -165,14 +166,18 @@ instance
       . unScriptDataConstr
       $ _witsScriptData m
 
-instance HasField "witsData" (TxWitness era) (Set (Data era)) where
+instance
+  (Crypto era ~ crypto) =>
+  HasField "witsData" (TxWitness era) (Map (DataHash crypto) (Data era))
+  where
   getField (TxWitnessConstr (Memo m _)) =
     _scriptDataData
       . memotype
       . unScriptDataConstr
       $ _witsScriptData m
 
-instance HasField "witsRdmrs" (TxWitness era) (Map RdmrPtr (Data era)) where
+instance
+  HasField "witsRdmrs" (TxWitness era) (Map RdmrPtr (Data era)) where
   getField (TxWitnessConstr (Memo m _)) =
     _scriptDataRdmrs
       . memotype
@@ -185,7 +190,7 @@ instance HasField "witsRdmrs" (TxWitness era) (Map RdmrPtr (Data era)) where
 
 data ScriptDataRaw era = ScriptDataRaw
   { _scriptDataScripts :: Map (ScriptHash (Crypto era)) (Core.Script era),
-    _scriptDataData :: Set (Data era),
+    _scriptDataData :: Map (DataHash (Crypto era)) (Data era),
     _scriptDataRdmrs :: Map RdmrPtr (Data era)
   }
   deriving (Generic)
@@ -195,7 +200,7 @@ deriving stock instance (Eq (Core.Script era)) => Eq (ScriptDataRaw era)
 deriving stock instance (Show (Core.Script era)) => Show (ScriptDataRaw era)
 
 instance
-  (NoThunks (Core.Script era)) =>
+  (NoThunks (Core.Script era), NoThunks (Data era)) =>
   NoThunks (ScriptDataRaw era)
 
 -- | 'ScriptData' is a projection of the parts of 'TxWitness' which may be
@@ -223,7 +228,7 @@ deriving newtype instance
 pattern ScriptData ::
   (Era era, ToCBOR (Core.Script era)) =>
   Map (ScriptHash (Crypto era)) (Core.Script era) ->
-  Set (Data era) ->
+  Map (DataHash (Crypto era)) (Data era) ->
   Map RdmrPtr (Data era) ->
   ScriptData era
 pattern ScriptData s d r <-
@@ -240,7 +245,7 @@ instance
   where
   (ScriptData s d r)
     <> (ScriptData s' d' r') =
-      ScriptData (s <> s') (d `Set.union` d') (r <> r')
+      ScriptData (s <> s') (d `Map.union` d') (r <> r')
 
 {-# COMPLETE ScriptData #-}
 
@@ -272,18 +277,19 @@ instance FromCBOR RdmrPtr where
   fromCBOR = decode $ RecD RdmrPtr <! From <! From
 
 encodeScriptDataRaw ::
-  (Era era, ToCBOR (Core.Script era)) =>
+  (Era era, ToCBOR (Core.Script era), ToCBOR (Data era)) =>
   ScriptDataRaw era ->
   Encode ('Closed 'Dense) (ScriptDataRaw era)
 encodeScriptDataRaw sdr =
   Rec ScriptDataRaw
     !> E mapToCBOR (_scriptDataScripts sdr)
-    !> E encodeFoldable (_scriptDataData sdr)
+    !> E mapToCBOR (_scriptDataData sdr)
     !> E mapToCBOR (_scriptDataRdmrs sdr)
 
 instance
-  ( FromCBOR (Data era),
+  ( Typeable (Data era),
     Typeable (Core.Script era),
+    FromCBOR (Annotator (Data era)),
     FromCBOR (Annotator (Core.Script era)),
     Era era
   ) =>
@@ -293,7 +299,7 @@ instance
     decode $
       Ann (RecD ScriptDataRaw)
         <*! D (sequence <$> mapFromCBOR)
-        <*! Ann (D (decodeSet fromCBOR))
+        <*! D (sequence <$> mapFromCBOR)
         <*! Ann (D mapFromCBOR)
 
 deriving via
@@ -301,6 +307,7 @@ deriving via
   instance
     ( Era era,
       FromCBOR (Annotator (Core.Script era)),
+      FromCBOR (Annotator (Data era)),
       FromCBOR (Data era),
       Typeable (Core.Script era)
     ) =>
@@ -312,7 +319,7 @@ encodeWitnessRaw ::
   Set (WitVKey 'Witness (Crypto era)) ->
   Set (BootstrapWitness (Crypto era)) ->
   Map (ScriptHash (Crypto era)) (Core.Script era) ->
-  Set (Data era) ->
+  Map (DataHash (Crypto era)) (Data era) ->
   Map RdmrPtr (Data era) ->
   Encode ('Closed 'Dense) (TxWitnessRaw era)
 encodeWitnessRaw a b s d r =
@@ -323,8 +330,10 @@ encodeWitnessRaw a b s d r =
 
 instance
   ( Era era,
+    CC.Crypto era,
     FromCBOR (Annotator (Core.Script era)),
-    FromCBOR (Data era),
+    FromCBOR (Annotator (Data era)),
+    ToCBOR (Data era),
     ToCBOR (Core.Script era),
     Typeable (Core.Script era)
   ) =>
@@ -341,8 +350,9 @@ deriving via
   (Mem (TxWitnessRaw era))
   instance
     ( Era era,
-      FromCBOR (Data era),
+      CC.Crypto era,
       FromCBOR (Annotator (Core.Script era)),
+      FromCBOR (Annotator (Data era)),
       ToCBOR (Core.Script era)
     ) =>
     FromCBOR (Annotator (TxWitness era))
