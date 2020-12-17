@@ -90,9 +90,10 @@ newEpochTransition = do
       e@(EpochNo e_)
       ) <-
     judgmentContext
-  if e_ /= eL + 1
-    then pure src
-    else do
+  case compare e_ eL of
+    LT -> error $ "bad epoch " <> show (e_, eL)
+    EQ -> pure src
+    GT -> do
       es' <- case ru of
         SNothing -> pure es
         SJust ru' -> do
