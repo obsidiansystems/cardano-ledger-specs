@@ -19,18 +19,15 @@ module Shelley.Spec.Ledger.STS.Epoch
 where
 
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
-import Control.Monad.Trans.Reader (asks)
 import Control.SetAlgebra (eval, (⨃))
-import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), TransitionRule, judgmentContext, liftSTS, trans)
-import Data.Map.Strict (Map)
+import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), TransitionRule, judgmentContext, trans)
 import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
-import Shelley.Spec.Ledger.BaseTypes (Globals (..), ShelleyBase)
+import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.EpochBoundary (emptySnapShots)
 import Shelley.Spec.Ledger.LedgerState
   ( EpochState,
-    PPUPState (..),
     PState (..),
     emptyAccount,
     emptyLedgerState,
@@ -41,24 +38,24 @@ import Shelley.Spec.Ledger.LedgerState
     esPrevPp,
     esSnapshots,
     _delegationState,
-    _ppups,
     _utxoState,
     pattern DPState,
     pattern EpochState,
   )
-import Shelley.Spec.Ledger.PParams (PParams, PParamsUpdate, ProposedPPUpdates (..), emptyPParams, updatePParams)
+import Shelley.Spec.Ledger.PParams
+  ( emptyPParams )
 import Shelley.Spec.Ledger.Rewards (emptyNonMyopic)
-import Shelley.Spec.Ledger.STS.Newpp (NEWPP, NewppEnv (..), NewppState (..))
 import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP, PoolreapState (..))
 import Shelley.Spec.Ledger.STS.Snap (SNAP)
 import Shelley.Spec.Ledger.Slot (EpochNo)
+import Shelley.Spec.Ledger.STS.Upec (UPEC)
 
 data EPOCH era
 
 data EpochPredicateFailure era
-  = PoolReapFailure (PredicateFailure (POOLREAP era)) -- Subtransition Failures
-  | SnapFailure (PredicateFailure (SNAP era)) -- Subtransition Failures
-  | NewPpFailure (PredicateFailure (NEWPP era)) -- Subtransition Failures
+  = PoolReapFailure (PredicateFailure (POOLREAP era))
+  | SnapFailure (PredicateFailure (SNAP era))
+  | UpecFailure (PredicateFailure (UPEC era))
   deriving (Generic)
 
 deriving stock instance
@@ -91,31 +88,6 @@ initialEpoch =
       emptyPParams
       emptyNonMyopic
 
-votedValue ::
-  ProposedPPUpdates era ->
-  PParams era ->
-  Int ->
-  Maybe (PParams era)
-votedValue (ProposedPPUpdates pup) pps quorumN =
-  let incrTally vote tally = 1 + Map.findWithDefault 0 vote tally
-      votes =
-        Map.foldr
-          (\vote tally -> Map.insert vote (incrTally vote tally) tally)
-          (Map.empty :: Map (PParamsUpdate era) Int)
-          pup
-      consensus = Map.filter (>= quorumN) votes
-   in case length consensus of
-        -- NOTE that `quorumN` is a global constant, and that we require
-        -- it to be strictly greater than half the number of genesis nodes.
-        -- The keys in the `pup` correspond to the genesis nodes,
-        -- and therefore either:
-        --   1) `consensus` is empty, or
-        --   2) `consensus` has exactly one element.
-        1 -> (Just . updatePParams pps . fst . head . Map.toList) consensus
-        -- NOTE that `updatePParams` corresponds to the union override right
-        -- operation in the formal spec.
-        _ -> Nothing
-
 epochTransition ::
   forall era.
   ShelleyBased era =>
@@ -127,7 +99,7 @@ epochTransition = do
         { esAccountState = acnt,
           esSnapshots = ss,
           esLState = ls,
-          esPrevPp = _pr,
+          esPrevPp = pr,
           esPp = pp,
           esNonMyopic = nm
         },
@@ -149,21 +121,18 @@ epochTransition = do
   PoolreapState utxoSt' acnt' dstate' pstate'' <-
     trans @(POOLREAP era) $ TRC (pp, PoolreapState utxoSt acnt dstate pstate', e)
 
-  coreNodeQuorum <- liftSTS $ asks quorum
+  let
+    epochState' =
+      EpochState
+        acnt'
+        ss'
+        (ls {_utxoState = utxoSt', _delegationState = DPState dstate' pstate''})
+        pr
+        pp
+        nm
 
-  let pup = proposals . _ppups $ utxoSt'
-  let ppNew = votedValue pup pp (fromIntegral coreNodeQuorum)
-  NewppState utxoSt'' acnt'' pp' <-
-    trans @(NEWPP era) $
-      TRC (NewppEnv dstate' pstate'', NewppState utxoSt' acnt' pp, ppNew)
-  pure $
-    EpochState
-      acnt''
-      ss'
-      (ls {_utxoState = utxoSt'', _delegationState = DPState dstate' pstate''})
-      pp
-      pp'
-      nm
+  trans @(UPEC era) $ TRC ((), epochState', ())
+
 
 instance ShelleyBased era => Embed (SNAP era) (EPOCH era) where
   wrapFailed = SnapFailure
@@ -171,5 +140,5 @@ instance ShelleyBased era => Embed (SNAP era) (EPOCH era) where
 instance ShelleyBased era => Embed (POOLREAP era) (EPOCH era) where
   wrapFailed = PoolReapFailure
 
-instance ShelleyBased era => Embed (NEWPP era) (EPOCH era) where
-  wrapFailed = NewPpFailure
+instance ShelleyBased era => Embed (UPEC era) (EPOCH era) where
+  wrapFailed = UpecFailure
