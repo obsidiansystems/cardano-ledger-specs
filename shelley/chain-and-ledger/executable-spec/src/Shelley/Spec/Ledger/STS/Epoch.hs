@@ -18,8 +18,8 @@ module Shelley.Spec.Ledger.STS.Epoch
   )
 where
 
-import Control.Exception (assert)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
+import Control.Exception (assert)
 import Control.SetAlgebra (eval, (⨃))
 import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), TransitionRule, judgmentContext, trans)
 import qualified Data.Map.Strict as Map
@@ -150,11 +150,11 @@ epochTransition = do
       acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
   pure $
     epochState'
-    { esAccountState = acnt'',
-      esLState = (esLState epochState') {_utxoState = utxoSt'''},
-      esPrevPp = pp,
-      esPp = pp'
-    }
+      { esAccountState = acnt'',
+        esLState = (esLState epochState') {_utxoState = utxoSt'''},
+        esPrevPp = pp,
+        esPp = pp'
+      }
 
 instance ShelleyBased era => Embed (SNAP era) (EPOCH era) where
   wrapFailed = SnapFailure
