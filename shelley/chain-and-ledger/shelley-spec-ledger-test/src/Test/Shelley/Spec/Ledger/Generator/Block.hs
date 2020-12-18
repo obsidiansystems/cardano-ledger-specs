@@ -22,6 +22,7 @@ import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
 import Cardano.Slotting.Slot (WithOrigin (..))
 import Control.SetAlgebra (dom, eval)
 import Control.State.Transition.Trace.Generator.QuickCheck (sigGen)
+import qualified Control.State.Transition.Trace.Generator.QuickCheck as QC
 import Data.Coerce (coerce)
 import Data.Foldable (toList)
 import qualified Data.List as List (find)
@@ -75,6 +76,7 @@ type TxGen era =
 genBlock ::
   forall era.
   ( EraGen era,
+    QC.HasTrace (Core.EraRule "LEDGERS" era) (GenEnv era),
     Mock (Crypto era),
     ApplyBlock era,
     GetLedgerView era,

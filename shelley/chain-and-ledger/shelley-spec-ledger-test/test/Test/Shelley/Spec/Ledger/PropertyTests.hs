@@ -17,15 +17,21 @@ where
 import Cardano.Ledger.AuxiliaryData (AuxiliaryDataHash, ValidateAuxiliaryData)
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Crypto)
+import Control.State.Transition (Environment, Signal, State)
+import qualified Control.State.Transition.Trace.Generator.QuickCheck as QC
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import GHC.Records (HasField (..))
 import Shelley.Spec.Ledger.BaseTypes
-  ( StrictMaybe (..),
+  ( Globals,
+    StrictMaybe (..),
   )
+import Shelley.Spec.Ledger.BlockChain (Block)
 import Shelley.Spec.Ledger.Coin (Coin (..))
 import Shelley.Spec.Ledger.Delegation.Certificates (DCert)
 import Shelley.Spec.Ledger.PParams (Update (..))
+import Shelley.Spec.Ledger.STS.Chain (ChainState)
+import Shelley.Spec.Ledger.STS.Ledger (LEDGER)
 import Shelley.Spec.Ledger.TxBody (TxIn, TxOut, Wdrl)
 import Test.Shelley.Spec.Ledger.Address.Bootstrap
   ( bootstrapHashTest,
@@ -37,6 +43,7 @@ import Test.Shelley.Spec.Ledger.Address.CompactAddr
     propDecompactShelleyLazyAddr,
   )
 import Test.Shelley.Spec.Ledger.ByronTranslation (testGroupByronTranslation)
+import Test.Shelley.Spec.Ledger.Generator.Core (GenEnv)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (EraGen)
 import Test.Shelley.Spec.Ledger.Rules.ClassifyTraces
   ( onlyValidChainSignalsAreGenerated,
@@ -60,6 +67,11 @@ minimalPropertyTests ::
   ( EraGen era,
     ChainProperty era,
     ValidateAuxiliaryData era,
+    QC.HasTrace (Core.EraRule "CHAIN" era) (GenEnv era),
+    Show (Environment (Core.EraRule "CHAIN" era)),
+    State (Core.EraRule "CHAIN" era) ~ ChainState era,
+    Signal (Core.EraRule "CHAIN" era) ~ Block era,
+    QC.BaseEnv (Core.EraRule "CHAIN" era) ~ Globals,
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
     HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
     HasField "txfee" (Core.TxBody era) Coin,
@@ -91,6 +103,13 @@ propertyTests ::
   ( EraGen era,
     ChainProperty era,
     ValidateAuxiliaryData era,
+    QC.HasTrace (Core.EraRule "CHAIN" era) (GenEnv era),
+    QC.HasTrace (Core.EraRule "LEDGER" era) (GenEnv era),
+    Show (Environment (Core.EraRule "CHAIN" era)),
+    State (Core.EraRule "CHAIN" era) ~ ChainState era,
+    Signal (Core.EraRule "CHAIN" era) ~ Block era,
+    QC.BaseEnv (Core.EraRule "CHAIN" era) ~ Globals,
+    Core.EraRule "LEDGER" era ~ LEDGER era,
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
     HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
     HasField "txfee" (Core.TxBody era) Coin,
@@ -105,7 +124,10 @@ propertyTests =
     "Property-Based Testing"
     [ testGroup
         "Classify Traces"
-        [TQC.testProperty "Chain and Ledger traces cover the relevant cases" (relevantCasesAreCovered @era)],
+        [ TQC.testProperty
+            "Chain and Ledger traces cover the relevant cases"
+            (relevantCasesAreCovered @era)
+        ],
       testGroup
         "STS Rules - Delegation Properties"
         [ TQC.testProperty

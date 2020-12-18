@@ -47,10 +47,7 @@ import qualified Data.Set as Set (fromList, intersection, isSubsetOf, map, null)
 import Data.Word (Word64)
 import Shelley.Spec.Ledger.API
   ( ApplyBlock,
-    CHAIN,
-    DELEG,
     GetLedgerView,
-    LEDGER,
   )
 import Shelley.Spec.Ledger.BlockChain
   ( BHeader (..),
@@ -63,10 +60,10 @@ import Shelley.Spec.Ledger.BlockChain
 import Shelley.Spec.Ledger.Coin
 import Shelley.Spec.Ledger.LedgerState hiding (circulation)
 import Shelley.Spec.Ledger.PParams (_eMax)
-import Shelley.Spec.Ledger.STS.Chain (ChainState (..), totalAda, totalAdaPots)
+import Shelley.Spec.Ledger.STS.Chain (CHAIN, ChainState (..), totalAda, totalAdaPots)
 import Shelley.Spec.Ledger.STS.Deleg (DelegEnv (..))
 import Shelley.Spec.Ledger.STS.Ledger (LedgerEnv (..))
-import Shelley.Spec.Ledger.STS.Pool (POOL, PoolEnv (..))
+import Shelley.Spec.Ledger.STS.Pool (PoolEnv (..))
 import Shelley.Spec.Ledger.Tx
 import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.UTxO (balance, totalDeposits, txins, txouts, pattern UTxO)
@@ -875,12 +872,7 @@ forAllChainTrace ::
   forall era prop.
   ( Testable prop,
     EraGen era,
-    ChainProperty era,
-    ValidateAuxiliaryData era,
-    HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
-    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
-    HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era)),
-    HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era)))
+    Core.EraRule "CHAIN" era ~ CHAIN era
   ) =>
   Word64 -> -- trace length
   (Trace (Core.EraRule "CHAIN" era) -> prop) ->
@@ -898,9 +890,10 @@ forAllChainTrace n prop =
     p = Proxy
 
 sameEpoch ::
+  forall era.
   SourceSignalTarget (Core.EraRule "CHAIN" era) ->
   Bool
 sameEpoch SourceSignalTarget {source, target} =
   epoch source == epoch target
   where
-    epoch = nesEL . chainNes
+    epoch = nesEL . chainNes @era

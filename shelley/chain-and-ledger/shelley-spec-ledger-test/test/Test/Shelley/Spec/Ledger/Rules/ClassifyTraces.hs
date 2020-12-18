@@ -20,21 +20,24 @@ module Test.Shelley.Spec.Ledger.Rules.ClassifyTraces
 where
 
 import Cardano.Binary (ToCBOR, serialize')
-import Cardano.Ledger.AuxiliaryData (AuxiliaryDataHash, ValidateAuxiliaryData)
+import Cardano.Ledger.AuxiliaryData (AuxiliaryDataHash)
 import qualified Cardano.Ledger.Core as Core (AuxiliaryData, EraRule, TxBody)
 import Cardano.Ledger.Era (Crypto, Era)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased, TxBodyConstraints)
 import Cardano.Slotting.Slot (EpochSize (..))
+import Control.State.Transition
 import Control.State.Transition.Trace
   ( Trace,
     TraceOrder (OldestFirst),
     traceSignals,
   )
 import Control.State.Transition.Trace.Generator.QuickCheck
-  ( forAllTraceFromInitState,
+  ( BaseEnv,
+    forAllTraceFromInitState,
     onlyValidSignalsAreGeneratedFromInitState,
     traceFromInitState,
   )
+import qualified Control.State.Transition.Trace.Generator.QuickCheck as QC
 import qualified Data.ByteString as BS
 import Data.Foldable (toList)
 import qualified Data.Map.Strict as Map
@@ -44,10 +47,12 @@ import Data.Set (Set)
 import GHC.Records (HasField (..), getField)
 import Shelley.Spec.Ledger.API
   ( Addr (..),
+    ChainState,
     Credential (..),
     DCert (..),
     DelegCert (..),
     Delegation (..),
+    LEDGER,
     TxOut (..),
   )
 import Shelley.Spec.Ledger.BaseTypes (Globals (epochInfo), StrictMaybe (..))
@@ -67,9 +72,7 @@ import Shelley.Spec.Ledger.Delegation.Certificates
     isRetirePool,
     isTreasuryMIRCert,
   )
-import Shelley.Spec.Ledger.LedgerState
-  ( txsizeBound,
-  )
+import Shelley.Spec.Ledger.LedgerState (txsizeBound)
 import Shelley.Spec.Ledger.PParams
   ( Update (..),
     pattern ProposedPPUpdates,
@@ -91,6 +94,7 @@ import Test.QuickCheck
     property,
     withMaxSuccess,
   )
+import Test.Shelley.Spec.Ledger.Generator.Core (GenEnv)
 import Test.Shelley.Spec.Ledger.Generator.EraGen (EraGen)
 import Test.Shelley.Spec.Ledger.Generator.Presets (genEnv)
 import Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
@@ -101,9 +105,12 @@ import Test.Shelley.Spec.Ledger.Utils
 relevantCasesAreCovered ::
   forall era.
   ( EraGen era,
+    QC.HasTrace (Core.EraRule "CHAIN" era) (GenEnv era),
     ChainProperty era,
-    ValidateAuxiliaryData era,
-    HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
+    Show (Environment (Core.EraRule "CHAIN" era)),
+    BaseEnv (Core.EraRule "CHAIN" era) ~ Globals,
+    State (Core.EraRule "CHAIN" era) ~ ChainState era,
+    Signal (Core.EraRule "CHAIN" era) ~ Block era,
     HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
     HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
     HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era)),
@@ -121,7 +128,7 @@ relevantCasesAreCovered = do
           (genEnv p)
           genesisChainSt
       )
-      relevantCasesAreCoveredForTrace
+      (relevantCasesAreCoveredForTrace @era)
   where
     p :: Proxy era
     p = Proxy
@@ -130,6 +137,7 @@ relevantCasesAreCovered = do
 relevantCasesAreCoveredForTrace ::
   forall era.
   ( ChainProperty era,
+    Signal (Core.EraRule "CHAIN" era) ~ Block era,
     HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
     HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
     HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era)),
@@ -311,17 +319,17 @@ hasMetadata tx =
 onlyValidLedgerSignalsAreGenerated ::
   forall era.
   ( EraGen era,
-    ChainProperty era,
-    ValidateAuxiliaryData era,
-    HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
-    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
-    HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
-    HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era))
+    Core.EraRule "LEDGER" era ~ LEDGER era,
+    QC.HasTrace (Core.EraRule "LEDGER" era) (GenEnv era)
   ) =>
   Property
 onlyValidLedgerSignalsAreGenerated =
   withMaxSuccess 200 $
-    onlyValidSignalsAreGeneratedFromInitState @(Core.EraRule "LEDGER" era) testGlobals 100 ge genesisLedgerSt
+    onlyValidSignalsAreGeneratedFromInitState @(Core.EraRule "LEDGER" era)
+      testGlobals
+      100
+      ge
+      genesisLedgerSt
   where
     p :: Proxy era
     p = Proxy
@@ -333,21 +341,24 @@ onlyValidLedgerSignalsAreGenerated =
 propAbstractSizeBoundsBytes ::
   forall era.
   ( EraGen era,
-    ChainProperty era,
-    ValidateAuxiliaryData era,
+    Core.EraRule "LEDGER" era ~ LEDGER era,
+    QC.HasTrace (Core.EraRule "LEDGER" era) (GenEnv era),
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
-    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
-    HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
-    HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era))
+    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era))
   ) =>
   Property
 propAbstractSizeBoundsBytes = property $ do
   let tl = 100
       numBytes = toInteger . BS.length . serialize'
-  forAllTraceFromInitState @(Core.EraRule "LEDGER" era) testGlobals tl (genEnv p) genesisLedgerSt $ \tr -> do
-    let txs :: [Tx era]
-        txs = traceSignals OldestFirst tr
-    all (\tx -> txsizeBound tx >= numBytes tx) txs
+  forAllTraceFromInitState @(Core.EraRule "LEDGER" era)
+    testGlobals
+    tl
+    (genEnv p)
+    genesisLedgerSt
+    $ \tr -> do
+      let txs :: [Tx era]
+          txs = traceSignals OldestFirst tr
+      all (\tx -> txsizeBound tx >= numBytes tx) txs
   where
     p :: Proxy era
     p = Proxy
@@ -358,12 +369,10 @@ propAbstractSizeBoundsBytes = property $ do
 propAbstractSizeNotTooBig ::
   forall era.
   ( EraGen era,
-    ChainProperty era,
-    ValidateAuxiliaryData era,
+    QC.HasTrace (Core.EraRule "LEDGER" era) (GenEnv era),
+    Core.EraRule "LEDGER" era ~ LEDGER era,
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
-    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
-    HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
-    HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era))
+    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era))
   ) =>
   Property
 propAbstractSizeNotTooBig = property $ do
@@ -376,10 +385,15 @@ propAbstractSizeNotTooBig = property $ do
       acceptableMagnitude = (3 :: Integer)
       numBytes = toInteger . BS.length . serialize'
       notTooBig txb = txsizeBound txb <= acceptableMagnitude * numBytes txb
-  forAllTraceFromInitState @(Core.EraRule "LEDGER" era) testGlobals tl (genEnv p) genesisLedgerSt $ \tr -> do
-    let txs :: [Tx era]
-        txs = traceSignals OldestFirst tr
-    all notTooBig txs
+  forAllTraceFromInitState @(Core.EraRule "LEDGER" era)
+    testGlobals
+    tl
+    (genEnv p)
+    genesisLedgerSt
+    $ \tr -> do
+      let txs :: [Tx era]
+          txs = traceSignals OldestFirst tr
+      all notTooBig txs
   where
     p :: Proxy era
     p = Proxy
@@ -388,17 +402,20 @@ propAbstractSizeNotTooBig = property $ do
 onlyValidChainSignalsAreGenerated ::
   forall era.
   ( EraGen era,
-    ChainProperty era,
-    ValidateAuxiliaryData era,
-    HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
-    HasField "outputs" (Core.TxBody era) (StrictSeq (TxOut era)),
-    HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
-    HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era))
+    QC.HasTrace (Core.EraRule "CHAIN" era) (GenEnv era),
+    BaseEnv (Core.EraRule "CHAIN" era) ~ Globals,
+    State (Core.EraRule "CHAIN" era) ~ ChainState era,
+    Show (Environment (Core.EraRule "CHAIN" era)),
+    Show (Signal (Core.EraRule "CHAIN" era))
   ) =>
   Property
 onlyValidChainSignalsAreGenerated =
   withMaxSuccess 100 $
-    onlyValidSignalsAreGeneratedFromInitState @(Core.EraRule "CHAIN" era) testGlobals 100 (genEnv p) genesisChainSt
+    onlyValidSignalsAreGeneratedFromInitState @(Core.EraRule "CHAIN" era)
+      testGlobals
+      100
+      (genEnv p)
+      genesisChainSt
   where
     p :: Proxy era
     p = Proxy

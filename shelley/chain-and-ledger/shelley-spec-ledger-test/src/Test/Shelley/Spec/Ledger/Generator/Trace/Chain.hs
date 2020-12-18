@@ -80,6 +80,7 @@ instance
     GetLedgerView era,
     ShelleyLedgerSTS era,
     ShelleyChainSTS era,
+    HasTrace (Core.EraRule "LEDGERS" era) (GenEnv era),
     Embed (Core.EraRule "BBODY" era) (CHAIN era),
     Environment (Core.EraRule "BBODY" era) ~ BbodyEnv era,
     State (Core.EraRule "BBODY" era) ~ BbodyState era,
