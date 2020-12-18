@@ -19,7 +19,6 @@ module Shelley.Spec.Ledger.STS.Epoch
 where
 
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
-import Control.Exception (assert)
 import Control.SetAlgebra (eval, (⨃))
 import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), TransitionRule, judgmentContext, trans)
 import qualified Data.Map.Strict as Map
@@ -144,9 +143,7 @@ epochTransition = do
   let Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
       Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
       Coin reserves = _reserves acnt'
-      utxoSt''' =
-        assert (_deposited utxoSt'' == Coin oblgCurr) $
-          utxoSt'' {_deposited = Coin oblgNew}
+      utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
       acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
   pure $
     epochState'
