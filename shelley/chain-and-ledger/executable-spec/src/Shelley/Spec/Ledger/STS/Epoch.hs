@@ -25,35 +25,36 @@ import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
+import Shelley.Spec.Ledger.Coin (Coin (..))
 import Shelley.Spec.Ledger.EpochBoundary (emptySnapShots, obligation)
 import Shelley.Spec.Ledger.LedgerState
   ( EpochState,
     PState (..),
-    _rewards,
-    _reserves,
     emptyAccount,
     emptyLedgerState,
     esAccountState,
     esLState,
-    _ppups,
     esNonMyopic,
     esPp,
     esPrevPp,
     esSnapshots,
     _delegationState,
-    _utxoState,
     _deposited,
+    _ppups,
+    _reserves,
+    _rewards,
+    _utxoState,
     pattern DPState,
     pattern EpochState,
   )
 import Shelley.Spec.Ledger.PParams
-  ( emptyPParams )
+  ( emptyPParams,
+  )
 import Shelley.Spec.Ledger.Rewards (emptyNonMyopic)
 import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP, PoolreapState (..))
 import Shelley.Spec.Ledger.STS.Snap (SNAP)
-import Shelley.Spec.Ledger.Slot (EpochNo)
 import Shelley.Spec.Ledger.STS.Upec (UPEC, UPECState (..))
-import Shelley.Spec.Ledger.Coin (Coin (..))
+import Shelley.Spec.Ledger.Slot (EpochNo)
 
 data EPOCH era
 
@@ -126,42 +127,40 @@ epochTransition = do
   PoolreapState utxoSt' acnt' dstate' pstate'' <-
     trans @(POOLREAP era) $ TRC (pp, PoolreapState utxoSt acnt dstate pstate', e)
 
-  let
-    epochState' =
-      EpochState
-        acnt'
-        ss'
-        (ls {_utxoState = utxoSt', _delegationState = DPState dstate' pstate''})
-        pr
-        pp
-        nm
+  let epochState' =
+        EpochState
+          acnt'
+          ss'
+          (ls {_utxoState = utxoSt', _delegationState = DPState dstate' pstate''})
+          pr
+          pp
+          nm
 
-  UPECState pp' ppupSt'
-    <- trans @(UPEC era) $ TRC (epochState', UPECState pp (_ppups utxoSt')  , ())
-  let utxoSt'' = utxoSt' { _ppups = ppupSt' }
+  UPECState pp' ppupSt' <-
+    trans @(UPEC era) $ TRC (epochState', UPECState pp (_ppups utxoSt'), ())
+  let utxoSt'' = utxoSt' {_ppups = ppupSt'}
 
   if pp /= pp'
     then do
-      let
-        Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
-        Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
-        Coin reserves = _reserves acnt
-        utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
-        acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
+      let Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
+          Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
+          Coin reserves = _reserves acnt
+          utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
+          acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
       pure $
         epochState'
-        { esAccountState = acnt''
-        , esLState = ls { _utxoState = utxoSt''' }
-        , esPrevPp = pp
-        , esPp = pp'
-        }
+          { esAccountState = acnt'',
+            esLState = ls {_utxoState = utxoSt'''},
+            esPrevPp = pp,
+            esPp = pp'
+          }
     else
       pure $
         epochState'
-        { esLState = ls { _utxoState = utxoSt'' }
-        , esPrevPp = pp
-        , esPp = pp'
-        }
+          { esLState = ls {_utxoState = utxoSt''},
+            esPrevPp = pp,
+            esPp = pp'
+          }
 
 instance ShelleyBased era => Embed (SNAP era) (EPOCH era) where
   wrapFailed = SnapFailure
