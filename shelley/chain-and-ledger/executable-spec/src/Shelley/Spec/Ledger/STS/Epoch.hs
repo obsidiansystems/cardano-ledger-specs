@@ -18,6 +18,7 @@ module Shelley.Spec.Ledger.STS.Epoch
   )
 where
 
+import Control.Exception (assert)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
 import Control.SetAlgebra (eval, (⨃))
 import Control.State.Transition (Embed (..), InitialRule, STS (..), TRC (..), TransitionRule, judgmentContext, trans)
@@ -140,27 +141,20 @@ epochTransition = do
     trans @(UPEC era) $ TRC (epochState', UPECState pp (_ppups utxoSt'), ())
   let utxoSt'' = utxoSt' {_ppups = ppupSt'}
 
-  if pp /= pp'
-    then do
-      let Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
-          Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
-          Coin reserves = _reserves acnt'
-          utxoSt''' = utxoSt'' {_deposited = Coin oblgNew}
-          acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
-      pure $
-        epochState'
-          { esAccountState = acnt'',
-            esLState = (esLState epochState') {_utxoState = utxoSt'''},
-            esPrevPp = pp,
-            esPp = pp'
-          }
-    else
-      pure $
-        epochState'
-          { esLState = (esLState epochState') {_utxoState = utxoSt'}, -- do not update the protocol parameters.
-            esPrevPp = pp,
-            esPp = pp
-          }
+  let Coin oblgCurr = obligation pp (_rewards dstate') (_pParams pstate'')
+      Coin oblgNew = obligation pp' (_rewards dstate') (_pParams pstate'')
+      Coin reserves = _reserves acnt'
+      utxoSt''' =
+        assert (_deposited utxoSt'' == Coin oblgCurr) $
+          utxoSt'' {_deposited = Coin oblgNew}
+      acnt'' = acnt' {_reserves = Coin $ reserves + oblgCurr - oblgNew}
+  pure $
+    epochState'
+    { esAccountState = acnt'',
+      esLState = (esLState epochState') {_utxoState = utxoSt'''},
+      esPrevPp = pp,
+      esPp = pp'
+    }
 
 instance ShelleyBased era => Embed (SNAP era) (EPOCH era) where
   wrapFailed = SnapFailure
