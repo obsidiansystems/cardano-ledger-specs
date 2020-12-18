@@ -86,31 +86,34 @@ newEpochTransition ::
 newEpochTransition = do
   TRC
     ( _,
-      src@(NewEpochState (EpochNo eL) _ bcur es ru _pd),
-      e@(EpochNo e_)
+      src@(NewEpochState eL _ bcur es0 ru _pd),
+      e
       ) <-
     judgmentContext
-  case compare e_ eL of
-    LT -> error $ "bad epoch " <> show (e_, eL)
+  case compare e eL of
+    LT -> error $ "bad epoch " <> show (e, eL)
     EQ -> pure src
     GT -> do
-      es' <- case ru of
-        SNothing -> pure es
+      es1 <- case ru of
+        SNothing -> pure es0
         SJust ru' -> do
           let RewardUpdate dt dr rs_ df _ = ru'
           Val.isZero (dt <> (dr <> (toDeltaCoin $ fold rs_) <> df)) ?! CorruptRewardUpdate ru'
-          pure $ applyRUpd ru' es
+          pure $ applyRUpd ru' es0
 
-      es'' <- trans @(MIR era) $ TRC ((), es', ())
-      es''' <- trans @(EPOCH era) $ TRC ((), es'', e)
-      let EpochState _acnt ss _ls _pr _ _ = es'''
+      es2 <- trans @(MIR era) $ TRC ((), es1, ())
+      es3 <- trans @(EPOCH era) $ TRC ((), es2, eL + 1)
+      let EpochState _acnt ss _ls _pr _ _ = es3
           pd' = calculatePoolDistr (_pstakeSet ss)
+      es4 <- if e == eL + 1 then pure es3 else
+          -- TODO also update pd' again for the next epoch?
+          trans @(EPOCH era) $ TRC ((), es3, eL + 2)
       pure $
         NewEpochState
           e
           bcur
           (BlocksMade Map.empty)
-          es'''
+          es4
           SNothing
           pd'
 
