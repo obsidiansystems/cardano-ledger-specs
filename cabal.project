@@ -16,6 +16,7 @@ packages:
   shelley-ma/impl
   shelley-ma/shelley-ma-test
   example-shelley/impl
+  example-shelley/example-shelley-test
 
 -- Always wrtie GHC env files, because they are needed by the doctests.
 write-ghc-environment-files: always
