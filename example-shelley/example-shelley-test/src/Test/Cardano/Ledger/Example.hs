@@ -28,6 +28,7 @@ import Cardano.Ledger.Example (ExampleEra)
 import Cardano.Ledger.Shelley.Constraints (ShelleyBased)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
+import Generic.Random (genericArbitraryU)
 import Shelley.Spec.Ledger.API
   ( Coin (..),
     DCert,
@@ -43,7 +44,9 @@ import Shelley.Spec.Ledger.Tx
     TxOut (..),
   )
 import Shelley.Spec.Ledger.TxBody (TxBody (TxBody, _inputs, _outputs, _txfee), Wdrl (..))
-import Test.QuickCheck (Gen)
+import qualified Shelley.Spec.Ledger.STS.Utxo as STS
+import Test.QuickCheck
+import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes
 import Test.Shelley.Spec.Ledger.Generator.Constants (Constants (..))
 import Test.Shelley.Spec.Ledger.Generator.Core
   ( GenEnv (..),
@@ -57,6 +60,7 @@ import Test.Shelley.Spec.Ledger.Generator.ScriptClass
     ScriptClass (..),
   )
 import Test.Shelley.Spec.Ledger.Generator.Trace.Chain ()
+import Test.Shelley.Spec.Ledger.Serialisation.EraIndepGenerators ()
 
 {------------------------------------------------------------------------------
   ExampleEra instances for EraGen and ScriptClass
@@ -132,3 +136,19 @@ genTimeToLive :: SlotNo -> Gen SlotNo
 genTimeToLive currentSlot = do
   ttl <- genNatural 50 100
   pure $ currentSlot + SlotNo (fromIntegral ttl)
+
+instance Mock c => Arbitrary (TxBody (ExampleEra c)) where
+  arbitrary =
+    TxBody
+      <$> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+
+instance Mock c => Arbitrary (STS.UtxoPredicateFailure (ExampleEra c)) where
+  arbitrary = genericArbitraryU
+  shrink _ = []
