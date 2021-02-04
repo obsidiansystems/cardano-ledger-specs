@@ -83,7 +83,7 @@ module Shelley.Spec.Ledger.LedgerState
 
     -- * Remove Bootstrap Redeem Addresses
     returnRedeemAddrsToReserves,
-    updateNonMypopic,
+    updateNonMyopic,
 
     -- *
     TransUTxOState,
@@ -100,6 +100,7 @@ import Cardano.Ledger.Compactible
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Crypto as CC (Crypto)
 import Cardano.Ledger.Era (Crypto, Era)
+import Cardano.Ledger.SafeHash (extractHash, hashAnnotated)
 import Cardano.Ledger.Shelley.Constraints
   ( TransValue,
     UsesAuxiliary,
@@ -116,7 +117,6 @@ import Control.Provenance (ProvM, lift, modifyWithBlackBox, runOtherProv)
 import Control.SetAlgebra (Bimap, biMapEmpty, dom, eval, forwards, range, (∈), (∪+), (▷), (◁))
 import Control.State.Transition (STS (State))
 import qualified Data.ByteString.Lazy as BSL (length)
-import Data.Coerce (coerce)
 import Data.Constraint (Constraint)
 import Data.Default.Class (Default, def)
 import Data.Foldable (fold, toList)
@@ -172,7 +172,6 @@ import Shelley.Spec.Ledger.EpochBoundary
     Stake (..),
     aggregateUtxoCoinByCredential,
   )
-import Shelley.Spec.Ledger.Hashing (hashAnnotated)
 import Shelley.Spec.Ledger.Keys
   ( DSignable,
     GenDelegPair (..),
@@ -197,10 +196,13 @@ import Shelley.Spec.Ledger.Rewards
   ( Likelihood (..),
     NonMyopic (..),
     PerformanceEstimate (..),
+    Reward (..),
+    aggregateRewards,
     applyDecay,
     desirability,
     percentile',
     reward,
+    sumRewards,
   )
 import Shelley.Spec.Ledger.Serialization (decodeRecordNamed, mapFromCBOR, mapToCBOR)
 import Shelley.Spec.Ledger.Slot
@@ -403,7 +405,7 @@ instance
 data RewardUpdate crypto = RewardUpdate
   { deltaT :: !DeltaCoin,
     deltaR :: !DeltaCoin,
-    rs :: !(Map (Credential 'Staking crypto) Coin),
+    rs :: !(Map (Credential 'Staking crypto) (Set (Reward crypto))),
     deltaF :: !DeltaCoin,
     nonMyopic :: !(NonMyopic crypto)
   }
@@ -777,6 +779,7 @@ minfeeBound pp tx =
 
 -- | Compute the lovelace which are created by the transaction
 produced ::
+  forall era.
   ( UsesTxBody era,
     UsesValue era,
     UsesTxOut era,
@@ -789,7 +792,7 @@ produced ::
   Core.TxBody era ->
   Core.Value era
 produced pp stakePools tx =
-  balance (txouts tx)
+  balance (txouts @era tx)
     <+> ( Val.inject $
             getField @"txfee" tx
               <+> totalDeposits pp stakePools (toList $ getField @"certs" tx)
@@ -921,6 +924,7 @@ witsVKeyNeeded utxo' tx@(Tx txbody _ _) genDelegs =
 -- | Given a ledger state, determine if the UTxO witnesses in a given
 --  transaction are correct.
 verifiedWits ::
+  forall era.
   ( UsesTxBody era,
     Core.AnnotatedData (Core.Script era),
     ToCBOR (Core.AuxiliaryData era),
@@ -937,12 +941,12 @@ verifiedWits (Tx txbody wits _) =
     failed =
       wvkKey
         <$> filter
-          (not . verifyWitVKey (coerce . hashAnnotated $ txbody))
+          (not . verifyWitVKey (extractHash (hashAnnotated @(Crypto era) txbody)))
           (Set.toList $ addrWits wits)
     failedBootstrap =
       bwKey
         <$> filter
-          (not . verifyBootstrapWit (coerce . hashAnnotated $ txbody))
+          (not . verifyBootstrapWit (extractHash (hashAnnotated @(Crypto era) txbody)))
           (Set.toList $ bootWits wits)
 
 -- | Calculate the set of hash keys of the required witnesses for update
@@ -1027,7 +1031,7 @@ applyRUpd ru (EpochState as ss ls pr pp _nm) = EpochState as' ss ls' pr pp nm'
     (regRU, unregRU) =
       Map.partitionWithKey
         (\k _ -> eval (k ∈ dom (_rewards dState)))
-        (rs ru)
+        (aggregateRewards pr $ rs ru)
     as' =
       as
         { _treasury = (addDeltaCoin (_treasury as) (deltaT ru)) <> fold (range unregRU),
@@ -1050,12 +1054,12 @@ applyRUpd ru (EpochState as ss ls pr pp _nm) = EpochState as' ss ls' pr pp nm'
 decayFactor :: Float
 decayFactor = 0.9
 
-updateNonMypopic ::
+updateNonMyopic ::
   NonMyopic crypto ->
   Coin ->
   Map (KeyHash 'StakePool crypto) Likelihood ->
   NonMyopic crypto
-updateNonMypopic nm rPot newLikelihoods =
+updateNonMyopic nm rPot newLikelihoods =
   nm
     { likelihoodsNM = updatedLikelihoods,
       rewardPotNM = rPot
@@ -1118,7 +1122,7 @@ createRUpd slotsPerEpoch b@(BlocksMade b') es@(EpochState acnt ss ls pr _ nm) ma
           asc
           slotsPerEpoch
       )
-  let deltaR2 = _R <-> (Map.foldr (<+>) mempty rs_)
+  let deltaR2 = _R <-> (sumRewards pr rs_)
       -- add under 'key' the pair (LikeliHoodEstimate,Desirability) to the Map 'ans'
       addDesire ans key likelihood = case Map.lookup key poolParams of
         Nothing ->
@@ -1171,7 +1175,7 @@ createRUpd slotsPerEpoch b@(BlocksMade b') es@(EpochState acnt ss ls pr _ nm) ma
         deltaR = ((invert $ toDeltaCoin deltaR1) <> toDeltaCoin deltaR2),
         rs = rs_,
         deltaF = (invert (toDeltaCoin $ _feeSS ss)),
-        nonMyopic = (updateNonMypopic nm _R newLikelihoods)
+        nonMyopic = (updateNonMyopic nm _R newLikelihoods)
       }
 
 -- | Calculate the current circulation

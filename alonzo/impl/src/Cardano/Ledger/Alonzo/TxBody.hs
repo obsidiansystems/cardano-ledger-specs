@@ -8,6 +8,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -17,8 +18,7 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Cardano.Ledger.Alonzo.TxBody
-  ( IsFee (..),
-    TxOut (TxOut, TxOutCompact),
+  ( TxOut (TxOut, TxOutCompact),
     TxBody
       ( TxBody,
         txinputs,
@@ -32,25 +32,49 @@ module Cardano.Ledger.Alonzo.TxBody
         txADhash,
         mint,
         exunits,
-        ppHash,
-        sdHash
+        sdHash,
+        scriptHash
       ),
     AlonzoBody,
+    EraIndependentWitnessPPData,
+    WitnessPPDataHash,
+    ppTxBody,
+    ppTxOut,
   )
 where
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
-import Cardano.Ledger.Alonzo.Data (DataHash)
-import Cardano.Ledger.Alonzo.PParams (PPHash (..))
-import Cardano.Ledger.Alonzo.Scripts (ExUnits)
-import Cardano.Ledger.Alonzo.TxWitness (ScriptDataHash)
-import Cardano.Ledger.AuxiliaryData (AuxiliaryDataHash)
+import Cardano.Ledger.Alonzo.Data (AuxiliaryDataHash, DataHash)
+import Cardano.Ledger.Alonzo.Scripts (ExUnits, ppExUnits)
 import Cardano.Ledger.Compactible
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Crypto as CC
 import Cardano.Ledger.Era (Crypto, Era)
-import Cardano.Ledger.Mary.Value (Value (..))
-import Cardano.Ledger.ShelleyMA.Timelocks (ValidityInterval (..))
+import Cardano.Ledger.Mary.Value (Value (..), ppValue)
+import Cardano.Ledger.Pretty
+  ( PDoc,
+    PrettyA (..),
+    ppAddr,
+    ppCoin,
+    ppDCert,
+    ppRecord,
+    ppSafeHash,
+    ppSet,
+    ppSexp,
+    ppStrictMaybe,
+    ppStrictSeq,
+    ppTxIn,
+    ppUpdate,
+    ppWdrl,
+  )
+import Cardano.Ledger.SafeHash
+  ( EraIndependentTxBody,
+    EraIndependentWitnessPPData,
+    HashAnnotated,
+    SafeHash,
+    SafeToHash,
+  )
+import Cardano.Ledger.ShelleyMA.Timelocks (ValidityInterval (..), ppValidityInterval)
 import Cardano.Ledger.Val
   ( DecodeNonNegative,
     decodeMint,
@@ -58,7 +82,6 @@ import Cardano.Ledger.Val
     encodeMint,
     isZero,
   )
-import Control.DeepSeq (NFData)
 import Data.Coders
 import Data.Maybe (fromMaybe)
 import Data.MemoBytes (Mem, MemoBytes (..), memoBytes)
@@ -76,25 +99,9 @@ import Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import Shelley.Spec.Ledger.Coin (Coin)
 import Shelley.Spec.Ledger.CompactAddr (CompactAddr, compactAddr, decompactAddr)
 import Shelley.Spec.Ledger.Delegation.Certificates (DCert)
-import Shelley.Spec.Ledger.Hashing
 import Shelley.Spec.Ledger.PParams (Update)
 import Shelley.Spec.Ledger.TxBody (TxIn (..), Wdrl (Wdrl), unWdrl)
 import Prelude hiding (lookup)
-
--- | Tag indicating whether an input should be used to pay transaction fees.
--- This is used to prevent the entirety of a script's inputs being used for fees
--- in the case that the script fails to validate.
-newtype IsFee = IsFee Bool
-  deriving
-    ( Eq,
-      NFData,
-      NoThunks,
-      Ord,
-      Show,
-      Typeable,
-      ToCBOR,
-      FromCBOR
-    )
 
 data TxOut era
   = TxOutCompact
@@ -141,6 +148,8 @@ pattern TxOut addr vl dh <-
 
 {-# COMPLETE TxOut #-}
 
+type WitnessPPDataHash crypto = SafeHash crypto EraIndependentWitnessPPData
+
 data TxBodyRaw era = TxBodyRaw
   { _inputs :: !(Set (TxIn (Crypto era))),
     _inputs_fee :: !(Set (TxIn (Crypto era))),
@@ -156,8 +165,8 @@ data TxBodyRaw era = TxBodyRaw
     -- Cardano.Ledger.Mary.Value.Value, not a Core.Value.
     -- Operations on the TxBody in the AlonzoEra depend upon this.
     _exunits :: !ExUnits,
-    _ppHash :: !(StrictMaybe (PPHash (Crypto era))),
-    _scriptHash :: !(StrictMaybe (ScriptDataHash (Crypto era)))
+    _sdHash :: !(StrictMaybe (WitnessPPDataHash (Crypto era))),
+    _scriptHash :: !(StrictMaybe (AuxiliaryDataHash (Crypto era)))
   }
   deriving (Generic, Typeable)
 
@@ -178,6 +187,7 @@ deriving instance
 
 newtype TxBody era = TxBodyConstr (MemoBytes (TxBodyRaw era))
   deriving (ToCBOR)
+  deriving newtype (SafeToHash)
 
 deriving newtype instance
   ( Eq (Core.Value era),
@@ -230,8 +240,8 @@ pattern TxBody ::
   StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   Value (Crypto era) ->
   ExUnits ->
-  StrictMaybe (PPHash (Crypto era)) ->
-  StrictMaybe (ScriptDataHash (Crypto era)) ->
+  StrictMaybe (WitnessPPDataHash (Crypto era)) ->
+  StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   TxBody era
 pattern TxBody
   { txinputs,
@@ -245,8 +255,8 @@ pattern TxBody
     txADhash,
     mint,
     exunits,
-    ppHash,
-    sdHash
+    sdHash,
+    scriptHash
   } <-
   TxBodyConstr
     ( Memo
@@ -262,8 +272,8 @@ pattern TxBody
             _adHash = txADhash,
             _mint = mint,
             _exunits = exunits,
-            _ppHash = ppHash,
-            _scriptHash = sdHash
+            _sdHash = sdHash,
+            _scriptHash = scriptHash
           }
         _
       )
@@ -280,7 +290,7 @@ pattern TxBody
       adHash'
       mint'
       exunits'
-      ppHash'
+      sdHash'
       scriptHash' =
         TxBodyConstr $
           memoBytes
@@ -297,14 +307,13 @@ pattern TxBody
                   adHash'
                   mint'
                   exunits'
-                  ppHash'
+                  sdHash'
                   scriptHash'
             )
 
 {-# COMPLETE TxBody #-}
 
-instance Era era => HashAnnotated (TxBody era) era where
-  type HashIndex (TxBody era) = EraIndependentTxBody
+instance (c ~ Crypto era, Era era) => HashAnnotated (TxBody era) EraIndependentTxBody c
 
 --------------------------------------------------------------------------------
 -- Serialisation
@@ -358,7 +367,7 @@ encodeTxBodyRaw
       _adHash,
       _mint,
       _exunits,
-      _ppHash,
+      _sdHash,
       _scriptHash
     } =
     Keyed
@@ -377,7 +386,7 @@ encodeTxBodyRaw
       !> encodeKeyedStrictMaybe 8 bot
       !> Omit isZero (Key 9 (E encodeMint _mint))
       !> Omit (== mempty) (Key 10 (To _exunits))
-      !> encodeKeyedStrictMaybe 11 _ppHash
+      !> encodeKeyedStrictMaybe 11 _sdHash
       !> encodeKeyedStrictMaybe 12 _scriptHash
     where
       encodeKeyedStrictMaybe key x =
@@ -421,6 +430,7 @@ instance
           mempty
           SNothing
           SNothing
+      bodyFields :: (Word -> Field (TxBodyRaw era))
       bodyFields 0 =
         field
           (\x tx -> tx {_inputs = x})
@@ -451,7 +461,7 @@ instance
           (D (SJust <$> fromCBOR))
       bodyFields 9 = field (\x tx -> tx {_mint = x}) (D decodeMint)
       bodyFields 10 = field (\x tx -> tx {_exunits = x}) From
-      bodyFields 11 = field (\x tx -> tx {_ppHash = x}) (D (SJust <$> fromCBOR))
+      bodyFields 11 = field (\x tx -> tx {_sdHash = x}) (D (SJust <$> fromCBOR))
       bodyFields 12 =
         field
           (\x tx -> tx {_scriptHash = x})
@@ -505,3 +515,52 @@ instance (CC.Crypto c, Crypto era ~ c) => HasField "address" (TxOut era) (Addr c
 
 instance (Core.Value era ~ val, Compactible val) => HasField "value" (TxOut era) val where
   getField (TxOutCompact _ v _) = fromCompact v
+
+-- ===================================================
+
+ppTxOut ::
+  ( Era era,
+    Compactible (Core.Value era),
+    Show (Core.Value era),
+    PrettyA (Core.Value era)
+  ) =>
+  TxOut era ->
+  PDoc
+ppTxOut (TxOut addr val dhash) =
+  ppSexp "TxOut" [ppAddr addr, prettyA val, ppStrictMaybe ppSafeHash dhash]
+
+ppTxBody ::
+  ( Era era,
+    Compactible (Core.Value era),
+    Show (Core.Value era),
+    PrettyA (Core.Value era)
+  ) =>
+  TxBody era ->
+  PDoc
+ppTxBody (TxBodyConstr (Memo (TxBodyRaw i ifee o c w fee vi u adh mnt exu sdh sch) _)) =
+  ppRecord
+    "TxBody(Mary or Allegra)"
+    [ ("inputs", ppSet ppTxIn i),
+      ("inputs_fee", ppSet ppTxIn ifee),
+      ("outputs", ppStrictSeq ppTxOut o),
+      ("certificates", ppStrictSeq ppDCert c),
+      ("withdrawals", ppWdrl w),
+      ("txfee", ppCoin fee),
+      ("vldt", ppValidityInterval vi),
+      ("update", ppStrictMaybe ppUpdate u),
+      ("adHash", ppStrictMaybe ppSafeHash adh),
+      ("mint", ppValue mnt),
+      ("exunits", ppExUnits exu),
+      ("sdHash", ppStrictMaybe ppSafeHash sdh),
+      ("scriptHash", ppStrictMaybe ppSafeHash sch)
+    ]
+
+instance
+  ( Era era,
+    PrettyA (Core.Value era),
+    Compactible (Core.Value era),
+    Show (Core.Value era)
+  ) =>
+  PrettyA (TxBody era)
+  where
+  prettyA = ppTxBody

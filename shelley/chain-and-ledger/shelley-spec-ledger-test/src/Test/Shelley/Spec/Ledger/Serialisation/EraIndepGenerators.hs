@@ -103,6 +103,8 @@ import Shelley.Spec.Ledger.Rewards
   ( Likelihood (..),
     LogWeight (..),
     PerformanceEstimate (..),
+    Reward (..),
+    RewardType (..),
   )
 import qualified Shelley.Spec.Ledger.STS.Deleg as STS
 import qualified Shelley.Spec.Ledger.STS.Delegs as STS
@@ -138,6 +140,7 @@ import Test.Shelley.Spec.Ledger.Serialisation.Generators.Bootstrap
   )
 import Test.Tasty.QuickCheck (Gen, choose, elements)
 import Control.State.Transition (STS (State))
+import Cardano.Ledger.SafeHash(SafeHash, HasAlgorithm, unsafeMakeSafeHash)
 
 -- =======================================================
 
@@ -146,6 +149,10 @@ genHash = mkDummyHash <$> arbitrary
 
 mkDummyHash :: forall h a. HashAlgorithm h => Int -> Hash.Hash h a
 mkDummyHash = coerce . hashWithSerialiser @h toCBOR
+
+genSafeHash :: HasAlgorithm c => Gen (SafeHash c i)
+genSafeHash = unsafeMakeSafeHash <$> arbitrary
+
 
 {-------------------------------------------------------------------------------
   Generators
@@ -261,12 +268,12 @@ maxTxWits :: Int
 maxTxWits = 5
 
 instance CC.Crypto crypto => Arbitrary (TxId crypto) where
-  arbitrary = TxId <$> genHash
+  arbitrary = TxId <$> genSafeHash
 
 instance CC.Crypto crypto => Arbitrary (TxIn crypto) where
   arbitrary =
     TxIn
-      <$> (TxId <$> genHash)
+      <$> (TxId <$> genSafeHash)
       <*> arbitrary
 
 instance
@@ -359,7 +366,7 @@ instance CC.Crypto crypto => Arbitrary (ScriptHash crypto) where
   arbitrary = ScriptHash <$> genHash
 
 instance CC.Crypto crypto => Arbitrary (AuxiliaryDataHash crypto) where
-  arbitrary = AuxiliaryDataHash <$> genHash
+  arbitrary = AuxiliaryDataHash <$> genSafeHash
 
 instance HashAlgorithm h => Arbitrary (Hash.Hash h a) where
   arbitrary = genHash
@@ -523,6 +530,14 @@ instance
       <*> genPParams (Proxy @era)
       <*> genPParams (Proxy @era)
       <*> arbitrary
+
+instance Arbitrary RewardType where
+  arbitrary = genericArbitraryU
+  shrink = genericShrink
+
+instance CC.Crypto crypto => Arbitrary (Reward crypto) where
+  arbitrary = genericArbitraryU
+  shrink = genericShrink
 
 instance CC.Crypto crypto => Arbitrary (RewardUpdate crypto) where
   arbitrary = genericArbitraryU

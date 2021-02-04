@@ -24,6 +24,7 @@ import Cardano.Ledger.Compactible (Compactible (..))
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Crypto (Crypto)
 import Cardano.Ledger.Era (Era)
+import Cardano.Ledger.SafeHash (SafeHash, extractHash)
 import Codec.Binary.Bech32
 import Control.Monad.Identity (Identity)
 import Control.SetAlgebra (forwards)
@@ -108,6 +109,8 @@ import Shelley.Spec.Ledger.Rewards
     LogWeight (..),
     NonMyopic (..),
     PerformanceEstimate (..),
+    Reward (..),
+    RewardType (..),
     StakeShare (..),
   )
 import Shelley.Spec.Ledger.Scripts (MultiSig (..), ScriptHash (..))
@@ -152,6 +155,9 @@ import Shelley.Spec.Ledger.UTxO (UTxO (..))
 -- ======================
 -- Named pretty printers for some simpe types
 
+ppString :: String -> Doc a
+ppString x = pretty x
+
 ppDouble :: Double -> Doc a
 ppDouble x = viaShow x
 
@@ -181,6 +187,9 @@ ppWord16 x = viaShow x
 
 ppFixedPoint :: FixedPoint -> Doc a
 ppFixedPoint x = viaShow x
+
+ppPair :: (t1 -> PDoc) -> (t2 -> PDoc) -> (t1, t2) -> PDoc
+ppPair pp1 pp2 (x, y) = ppSexp' mempty [pp1 x, pp2 y]
 
 -- ppSignedDSIGN :: SignedDSIGN a b -> Doc ann
 ppSignedDSIGN :: Show a => a -> PDoc
@@ -393,13 +402,26 @@ ppPState (PState par fpar ret) =
 ppRewardAccounts :: Map.Map (Credential 'Staking crypto) Coin -> PDoc
 ppRewardAccounts m = ppMap' (text "RewardAccounts") ppCredential ppCoin m
 
+ppRewardType :: RewardType -> PDoc
+ppRewardType MemberReward = text "MemberReward"
+ppRewardType LeaderReward = text "LeaderReward"
+
+ppReward :: Reward crypto -> PDoc
+ppReward (Reward rt pool amt) =
+  ppRecord
+    "Reward"
+    [ ("rewardType", ppRewardType rt),
+      ("poolId", ppKeyHash pool),
+      ("rewardAmount", ppCoin amt)
+    ]
+
 ppRewardUpdate :: RewardUpdate crypto -> PDoc
 ppRewardUpdate (RewardUpdate dt dr rss df nonmyop) =
   ppRecord
     "RewardUpdate"
     [ ("deltaT", ppDeltaCoin dt),
       ("deltaR", ppDeltaCoin dr),
-      ("rs", ppMap' mempty ppCredential ppCoin rss),
+      ("rs", ppMap' mempty ppCredential (ppSet ppReward) rss),
       ("deltaF", ppDeltaCoin df),
       ("nonMyopic", ppNonMyopic nonmyop)
     ]
@@ -648,10 +670,15 @@ instance (Era era, PrettyA (Core.Script era)) => PrettyA (WitnessSetHKD Identity
 -- ============================
 --  Cardano.Ledger.AuxiliaryData
 
+ppSafeHash :: SafeHash crypto index -> PDoc
+ppSafeHash x = ppHash (extractHash x)
+
 ppAuxiliaryDataHash :: AuxiliaryDataHash c -> PDoc
-ppAuxiliaryDataHash (AuxiliaryDataHash h) = ppSexp "AuxiliaryDataHash" [ppHash h]
+ppAuxiliaryDataHash (AuxiliaryDataHash h) = ppSexp "AuxiliaryDataHash" [ppSafeHash h]
 
 instance PrettyA (AuxiliaryDataHash c) where prettyA = ppAuxiliaryDataHash
+
+instance PrettyA (SafeHash c i) where prettyA = ppSafeHash
 
 -- ============================
 --  Cardano.Ledger.Compactible
@@ -699,7 +726,7 @@ ppWdrl :: Wdrl c -> PDoc
 ppWdrl (Wdrl m) = ppSexp "" [ppMap' (text "Wdr") ppRewardAcnt ppCoin m]
 
 ppTxId :: TxId c -> PDoc
-ppTxId (TxId x) = ppSexp "TxId" [ppHash x]
+ppTxId (TxId x) = ppSexp "TxId" [ppSafeHash x]
 
 ppTxIn :: TxIn c -> PDoc
 ppTxIn (TxInCompact txid word) = ppSexp "TxIn" [ppTxId txid, ppWord64 word]
