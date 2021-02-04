@@ -12,11 +12,6 @@ category:            Network
 build-type:          Simple
 
 
-extra-source-files:
-  cddl-files/shelley-ma.cddl
-  cddl-files/mock/crypto.cddl
-  cddl-files/mock/extras.cddl
-
 source-repository head
   type:     git
   location: https://github.com/input-output-hk/cardano-ledger-specs
@@ -84,7 +79,6 @@ test-suite cardano-ledger-example-shelley-tests
       "-with-rtsopts=-K4m -M250m"
     build-depends:
       data-default-class,
-      shelley-spec-ledger-test,
       cardano-ledger-example-shelley,
       cardano-ledger-example-shelley-test,
       base >=4.9 && <4.15,
@@ -103,4 +97,3 @@ test-suite cardano-ledger-example-shelley-tests
       tasty-quickcheck,
       tasty,
       QuickCheck,
-
