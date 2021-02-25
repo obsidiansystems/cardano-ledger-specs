@@ -11,8 +11,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Test.Cardano.Ledger.Example
-  ( -- export EraGen instance for ExampleEra and helpers shared with MaryEra
-    genCoin
+  ( genCoin
   )
 where
 
@@ -37,6 +36,7 @@ import Shelley.Spec.Ledger.API
   )
 import Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import Shelley.Spec.Ledger.STS.EraMapping ()
+import qualified Shelley.Spec.Ledger.STS.Utxo as STS
 import Shelley.Spec.Ledger.Scripts (MultiSig (..))
 import Shelley.Spec.Ledger.Slot (SlotNo (..))
 import Shelley.Spec.Ledger.Tx
@@ -44,7 +44,6 @@ import Shelley.Spec.Ledger.Tx
     TxOut (..),
   )
 import Shelley.Spec.Ledger.TxBody (TxBody (TxBody, _inputs, _outputs, _txfee), Wdrl (..))
-import qualified Shelley.Spec.Ledger.STS.Utxo as STS
 import Test.QuickCheck
 import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes
 import Test.Shelley.Spec.Ledger.Generator.Constants (Constants (..))

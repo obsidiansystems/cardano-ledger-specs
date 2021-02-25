@@ -21,26 +21,17 @@ import Cardano.Ledger.Crypto (HASH)
 import qualified Cardano.Ledger.Crypto as CryptoClass
 import Cardano.Ledger.Era (Era (Crypto))
 import Cardano.Ledger.Shelley.Constraints (UsesTxOut (..), UsesValue)
-import Shelley.Spec.Ledger.Coin (Coin)
-import Shelley.Spec.Ledger.Keys (hashWithSerialiser)
-import Shelley.Spec.Ledger.Metadata (Metadata (Metadata), validMetadatum)
-import Shelley.Spec.Ledger.Scripts (MultiSig)
-import Shelley.Spec.Ledger.Tx
-  ( ValidateScript (hashScript, validateScript),
-    hashMultiSigScript,
-    validateNativeMultiSigScript,
-  )
 import Shelley.Spec.Ledger.API
   ( ApplyBlock,
     ApplyTx,
     GetLedgerView,
     PraosCrypto,
     ShelleyBasedEra,
-    TxOut (..)
+    TxOut (..),
   )
-
-import Shelley.Spec.Ledger.TxBody (TxBody (..))
-
+import Shelley.Spec.Ledger.Coin (Coin)
+import Shelley.Spec.Ledger.Keys (hashWithSerialiser)
+import Shelley.Spec.Ledger.Metadata (Metadata (Metadata), validMetadatum)
 import Shelley.Spec.Ledger.STS.Bbody (BBODY)
 import Shelley.Spec.Ledger.STS.Deleg (DELEG)
 import Shelley.Spec.Ledger.STS.Delegs (DELEGS)
@@ -58,11 +49,18 @@ import Shelley.Spec.Ledger.STS.PoolReap (POOLREAP)
 import Shelley.Spec.Ledger.STS.Ppup (PPUP)
 import Shelley.Spec.Ledger.STS.Rupd (RUPD)
 import Shelley.Spec.Ledger.STS.Snap (SNAP)
-import Shelley.Spec.Ledger.STS.Tickn (TICKN)
 import Shelley.Spec.Ledger.STS.Tick (TICK, TICKF)
+import Shelley.Spec.Ledger.STS.Tickn (TICKN)
 import Shelley.Spec.Ledger.STS.Upec (UPEC)
 import Shelley.Spec.Ledger.STS.Utxo (UTXO)
 import Shelley.Spec.Ledger.STS.Utxow (UTXOW)
+import Shelley.Spec.Ledger.Scripts (MultiSig)
+import Shelley.Spec.Ledger.Tx
+  ( ValidateScript (hashScript, validateScript),
+    hashMultiSigScript,
+    validateNativeMultiSigScript,
+  )
+import Shelley.Spec.Ledger.TxBody (TxBody (..))
 
 data ExampleEra c
 
@@ -104,32 +102,57 @@ instance CryptoClass.Crypto c => ValidateAuxiliaryData (ExampleEra c) where
   validateAuxiliaryData (Metadata m) = all validMetadatum m
 
 instance PraosCrypto c => ApplyTx (ExampleEra c)
+
 instance PraosCrypto c => ApplyBlock (ExampleEra c)
+
 instance PraosCrypto c => GetLedgerView (ExampleEra c)
+
 instance PraosCrypto c => ShelleyBasedEra (ExampleEra c)
 
 -- These rules are all inherited from Shelley
 -- The types on the right are all instances of class STS, ultimately defined in Control.State.Transition.Extended
 type instance Core.EraRule "BBODY" (ExampleEra c) = BBODY (ExampleEra c) -- Block body
+
 type instance Core.EraRule "DELEG" (ExampleEra c) = DELEG (ExampleEra c)
+
 type instance Core.EraRule "DELEGS" (ExampleEra c) = DELEGS (ExampleEra c)
+
 type instance Core.EraRule "DELPL" (ExampleEra c) = DELPL (ExampleEra c)
+
 type instance Core.EraRule "EPOCH" (ExampleEra c) = EPOCH (ExampleEra c)
+
 type instance Core.EraRule "LEDGER" (ExampleEra c) = LEDGER (ExampleEra c)
+
 type instance Core.EraRule "LEDGERS" (ExampleEra c) = LEDGERS (ExampleEra c)
+
 type instance Core.EraRule "MIR" (ExampleEra c) = MIR (ExampleEra c)
+
 type instance Core.EraRule "NEWEPOCH" (ExampleEra c) = NEWEPOCH (ExampleEra c)
+
 type instance Core.EraRule "NEWPP" (ExampleEra c) = NEWPP (ExampleEra c)
+
 type instance Core.EraRule "OCERT" (ExampleEra c) = OCERT (ExampleEra c)
+
 type instance Core.EraRule "OVERLAY" (ExampleEra c) = OVERLAY (ExampleEra c)
+
 type instance Core.EraRule "POOL" (ExampleEra c) = POOL (ExampleEra c)
+
 type instance Core.EraRule "POOLREAP" (ExampleEra c) = POOLREAP (ExampleEra c)
+
 type instance Core.EraRule "PPUP" (ExampleEra c) = PPUP (ExampleEra c)
+
 type instance Core.EraRule "RUPD" (ExampleEra c) = RUPD (ExampleEra c)
+
 type instance Core.EraRule "SNAP" (ExampleEra c) = SNAP (ExampleEra c)
+
 type instance Core.EraRule "TICK" (ExampleEra c) = TICK (ExampleEra c)
+
 type instance Core.EraRule "TICKF" (ExampleEra c) = TICKF (ExampleEra c)
+
 type instance Core.EraRule "TICKN" (ExampleEra _c) = TICKN
+
 type instance Core.EraRule "UPEC" (ExampleEra c) = UPEC (ExampleEra c)
+
 type instance Core.EraRule "UTXO" (ExampleEra c) = UTXO (ExampleEra c)
+
 type instance Core.EraRule "UTXOW" (ExampleEra c) = UTXOW (ExampleEra c)
