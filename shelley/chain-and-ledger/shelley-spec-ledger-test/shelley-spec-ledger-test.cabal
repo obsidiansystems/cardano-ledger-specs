@@ -30,6 +30,7 @@ library
     Test.Screenplay
     Test.Shelley.Spec.Ledger.BenchmarkFunctions
     Test.Shelley.Spec.Ledger.ConcreteCryptoTypes
+    Test.Shelley.Spec.Ledger.Example
     Test.Shelley.Spec.Ledger.Generator.Block
     Test.Shelley.Spec.Ledger.Generator.Constants
     Test.Shelley.Spec.Ledger.Generator.Core
@@ -110,6 +111,9 @@ library
     tasty,
     text,
     time,
+    mtl,
+    data-default,
+    groups,
     transformers
 
 test-suite shelley-spec-ledger-test

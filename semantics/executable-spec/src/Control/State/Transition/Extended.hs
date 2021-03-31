@@ -49,6 +49,7 @@ module Control.State.Transition.Extended
     applySTS,
     applySTSIndifferently,
     reapplySTS,
+    applySTSList, applySTSList_,
 
     -- * Random thing
     Threshold (..),
@@ -524,3 +525,29 @@ straverse_ f = foldr c (pure ())
 sfor_ :: (Foldable t, Applicative f) => t a -> (a -> f b) -> f ()
 {-# INLINE sfor_ #-}
 sfor_ = flip straverse_
+
+applySTSList
+  :: forall sts proxy.  (STS sts, Environment sts ~ ())
+  => proxy sts
+  -> State sts
+  -> [Signal sts]
+  -> BaseM sts (Either [[PredicateFailure sts]] (State sts))
+applySTSList = applySTSList_ (pure ())
+
+applySTSList_
+  :: forall sts proxy.  (STS sts)
+  => BaseM sts (Environment sts)
+  -> proxy sts
+  -> State sts
+  -> [Signal sts]
+  -> BaseM sts (Either [[PredicateFailure sts]] (State sts))
+applySTSList_ mkEnv _ = go
+  where
+    go :: State sts -> [Signal sts] -> BaseM sts (Either [[PredicateFailure sts]] (State sts))
+    go st [] = pure $ Right st
+    go st (x:xs) = do
+      env <- mkEnv
+      applySTS @sts (TRC (env, st, x)) >>= \case
+        Right st' -> go st' xs
+        st'@(Left _) -> pure st'
+
