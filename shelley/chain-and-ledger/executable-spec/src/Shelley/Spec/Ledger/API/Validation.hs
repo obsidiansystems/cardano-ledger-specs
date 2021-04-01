@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -17,7 +18,11 @@ module Shelley.Spec.Ledger.API.Validation
     TickTransitionError (..),
     BlockTransitionError (..),
     chainChecks,
-    ApplyBlock'(..)
+    ApplyBlock'(..),
+    runTrace, ApplyBlockData(..),
+    TraceApplyBlock(..),
+    ModelTxId(..), ModelAddress(..), ModelValue(..), ModelTxIn(..),
+    ModelTxOut(..), ModelTx(..), ModelBlock(..)
   )
 where
 
@@ -35,6 +40,7 @@ import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.BaseTypes (Globals (..))
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.BlockChain
+import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
 import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import qualified Shelley.Spec.Ledger.STS.Bbody as STS
@@ -42,10 +48,75 @@ import qualified Shelley.Spec.Ledger.STS.Chain as STS
 import Shelley.Spec.Ledger.STS.EraMapping ()
 import Shelley.Spec.Ledger.Slot (SlotNo)
 import Data.Proxy
+import Numeric.Natural
+import Data.Set (Set)
+import Data.Kind (Type)
+import Control.Monad.State (StateT)
+import Data.Map (Map)
 
 {-------------------------------------------------------------------------------
   Block validation API
 -------------------------------------------------------------------------------}
+
+
+newtype ModelTxId = ModelTxId Integer
+newtype ModelAddress = ModelAddress String
+newtype ModelValue = ModelValue Integer
+
+data ModelTxIn = ModelTxIn ModelTxId Natural
+data ModelTxOut = ModelTxOut ModelAddress ModelValue
+
+data ModelTx = ModelTx
+  { _mtxId :: !ModelTxId
+  , _mtxInputs :: !(Set ModelTxIn)
+  , _mtxOutputs :: ![ModelTxOut]
+  , _mtxFee :: !ModelValue
+  }
+
+data ModelBlock = ModelBlock
+  { _mbSlot :: !SlotNo
+  , _mbUtxo :: ![ModelTx]
+  }
+
+
+class TraceApplyBlock era where
+
+  toEra
+    :: proxy era
+    -> [ModelTxOut]
+    -> [ModelBlock]
+    -> BaseM era
+      ( State (Core.EraRule "TICK" era)
+      , [ApplyBlockData era]
+      )
+
+-- instance PraosCrypto crypto => TraceApplyBlock (ShelleyEra crypto) where
+--   toEra _ utxos blocks = _
+
+
+data ApplyBlockData era where
+  ApplyTick :: Signal (Core.EraRule "TICK" era) -> ApplyBlockData era
+  ApplyBlock :: Signal (Core.EraRule "BBODY" era) -> ApplyBlockData era
+
+runTrace
+  :: forall era. ApplyBlock' era
+  => State (Core.EraRule "TICK" era)
+  -> [ApplyBlockData era]
+  -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
+runTrace = go
+  where
+    go
+      :: State (Core.EraRule "TICK" era)
+      -> [ApplyBlockData era]
+      -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
+    go st [] = pure (Right st)
+    go st0 (x:xs) = do
+      x' <- case x of
+        ApplyTick tick -> Right <$> applyTick' (Proxy :: Proxy era) st0 tick
+        ApplyBlock blk -> applyBlock' (Proxy :: Proxy era) st0 blk
+      case x' of
+        Left bad -> pure (Left bad)
+        Right good -> go good xs
 
 -- TODO: pass ApplySTSOpts
 class
@@ -149,6 +220,8 @@ class
           TRC (getBBodyEnv proxy state, bbs, blk)
       bbs = getBBodyState proxy state
   {-# INLINE reapplyBlock' #-}
+
+
 
 
 instance PraosCrypto crypto => ApplyBlock' (ShelleyEra crypto) where
