@@ -27,12 +27,13 @@ import Cardano.Ledger.Era (Crypto, Era)
 import Cardano.Ledger.Shelley (ShelleyEra)
 import Control.Arrow (left, right)
 import Control.Monad.Except
-import Control.Monad.Trans.Reader (runReader, Reader)
+import Control.Monad.Trans.Reader (runReader)
 import Control.State.Transition.Extended
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.BaseTypes (Globals (..))
+import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.BlockChain
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
 import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
@@ -46,71 +47,81 @@ import Data.Proxy
   Block validation API
 -------------------------------------------------------------------------------}
 
-
--- TODO: get rid of GlobalEnvironment and use BaseM directly
--- TOD: pass ApplySTSOpts
+-- TODO: pass ApplySTSOpts
 class
     ( STS (Core.EraRule "TICK" era)
     , STS (Core.EraRule "BBODY" era)
     , Environment (Core.EraRule "TICK" era) ~ ()
     , BaseM (Core.EraRule "TICK" era) ~ BaseM (Core.EraRule "BBODY" era)
     ) => ApplyBlock' era where
-  type GlobalEnvironment era
-  type BTError era
 
   -- | Apply the header level ledger transition.
   --
   -- This handles checks and updates that happen on a slot tick, as well as a
   -- few header level checks, such as size constraints.
   applyTick' :: proxy era
-    -> GlobalEnvironment era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "TICK" era)
-    -> State (Core.EraRule "TICK" era)
-  default applyTick' ::
-    (BaseM (Core.EraRule "TICK" era) ~ Reader (GlobalEnvironment era))
-    => proxy era
-    -> GlobalEnvironment era
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era))
+  default applyTick' :: proxy era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "TICK" era)
-    -> State (Core.EraRule "TICK" era)
-  applyTick' _ globals state hdr =
-    either err id . flip runReader globals
-      . applySTS @(Core.EraRule "TICK" era)
-      $ TRC ((), state, hdr)
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era))
+  applyTick' _ state hdr =
+    either err id <$> applySTS @(Core.EraRule "TICK" era)
+      ( TRC ((), state, hdr) )
     where
       err :: Show a => a -> b
       err msg = error $ "Panic! applyTick failed: " <> show msg
   {-# INLINE applyTick' #-}
 
+
   getBBodyState :: proxy era -> State (Core.EraRule "TICK" era) -> State (Core.EraRule "BBODY" era)
+  default getBBodyState ::
+    ( State (Core.EraRule "BBODY" era) ~ STS.BbodyState era
+    , State (Core.EraRule "TICK" era) ~ NewEpochState era
+    ) => proxy era -> State (Core.EraRule "TICK" era) -> State (Core.EraRule "BBODY" era)
+  getBBodyState _ state = STS.BbodyState
+          (LedgerState.esLState $ LedgerState.nesEs state)
+          (LedgerState.nesBcur state)
+  {-# INLINE getBBodyState #-}
+
   setBBodyState :: proxy era -> State (Core.EraRule "TICK" era) -> State (Core.EraRule "BBODY" era) -> State (Core.EraRule "TICK" era)
+  default setBBodyState ::
+    ( State (Core.EraRule "BBODY" era) ~ STS.BbodyState era
+    , State (Core.EraRule "TICK" era) ~ NewEpochState era
+    ) => proxy era -> State (Core.EraRule "TICK" era) -> State (Core.EraRule "BBODY" era) -> State (Core.EraRule "TICK" era)
+  setBBodyState _ = updateNewEpochState
+  {-# INLINE setBBodyState #-}
   getBBodyEnv :: proxy era -> State (Core.EraRule "TICK" era) -> Environment (Core.EraRule "BBODY" era)
-  wrapBlockError :: proxy era -> [[PredicateFailure (Core.EraRule "BBODY" era)]] -> BTError era
+  default getBBodyEnv ::
+    ( State (Core.EraRule "TICK" era) ~ NewEpochState era
+    , Environment (Core.EraRule "BBODY" era) ~ STS.BbodyEnv era
+    ) => proxy era -> State (Core.EraRule "TICK" era) -> Environment (Core.EraRule "BBODY" era)
+  getBBodyEnv _ = mkBbodyEnv
+  {-# INLINE getBBodyEnv #-}
+  wrapBlockError :: proxy era -> [[PredicateFailure (Core.EraRule "BBODY" era)]] -> BlockTransitionError era
+  wrapBlockError _ = BlockTransitionError . join
+  {-# INLINE wrapBlockError #-}
 
   -- | Apply the block level ledger transition.
   applyBlock' :: proxy era
-    -> GlobalEnvironment era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "BBODY" era)
-    -> Either (BTError era) (State (Core.EraRule "TICK" era))
-  default applyBlock' ::
-    (BaseM (Core.EraRule "TICK" era) ~ Reader (GlobalEnvironment era))
-    => proxy era
-    -> GlobalEnvironment era
+    -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
+  default applyBlock' :: proxy era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "BBODY" era)
-    -> Either (BTError era) (State (Core.EraRule "TICK" era))
-  applyBlock' _ globals state blk =
+    -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
+  applyBlock' _ state blk =
         right (setBBodyState proxy state)
       . left (wrapBlockError proxy)
-      $ res
+      <$> res
     where
       proxy :: Proxy era
       proxy = Proxy
 
-      res =
-        flip runReader globals . applySTS @(Core.EraRule "BBODY" era) $
+      res = applySTS @(Core.EraRule "BBODY" era) $
           TRC (getBBodyEnv proxy state, bbs, blk)
       bbs = getBBodyState proxy state
   {-# INLINE applyBlock' #-}
@@ -122,24 +133,19 @@ class
   -- the caller implicitly guarantees that they have previously called
   -- 'applyBlockTransition' on the same block and that this was successful.
   reapplyBlock' :: proxy era
-    -> GlobalEnvironment era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "BBODY" era)
-    -> State (Core.EraRule "TICK" era)
-  default reapplyBlock' ::
-    (BaseM (Core.EraRule "TICK" era) ~ Reader (GlobalEnvironment era))
-    => proxy era
-    -> GlobalEnvironment era
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era))
+  default reapplyBlock' :: proxy era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "BBODY" era)
-    -> State (Core.EraRule "TICK" era)
-  reapplyBlock' _ globals state blk =
-    setBBodyState proxy state res
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era))
+  reapplyBlock' _ state blk =
+    setBBodyState proxy state <$> res
     where
       proxy :: Proxy era
       proxy = Proxy
-      res =
-        flip runReader globals . reapplySTS @(Core.EraRule "BBODY" era) $
+      res = reapplySTS @(Core.EraRule "BBODY" era) $
           TRC (getBBodyEnv proxy state, bbs, blk)
       bbs = getBBodyState proxy state
   {-# INLINE reapplyBlock' #-}
@@ -147,26 +153,17 @@ class
 
 instance PraosCrypto crypto => ApplyBlock' (ShelleyEra crypto) where
 
-  type GlobalEnvironment (ShelleyEra crypto) = Globals
-  type BTError (ShelleyEra crypto) = BlockTransitionError (ShelleyEra crypto)
-
-  getBBodyState _ state = STS.BbodyState
-          (LedgerState.esLState $ LedgerState.nesEs state)
-          (LedgerState.nesBcur state)
-  {-# INLINE getBBodyState #-}
-  setBBodyState _ = updateNewEpochState
-  {-# INLINE setBBodyState #-}
-  getBBodyEnv _ = mkBbodyEnv
-  {-# INLINE getBBodyEnv #-}
-  wrapBlockError _ = BlockTransitionError . join
-  {-# INLINE wrapBlockError #-}
-
-
+  -- getBBodyState _ state = STS.BbodyState
+  --         (LedgerState.esLState $ LedgerState.nesEs state)
+  --         (LedgerState.nesBcur state)
+  -- {-# INLINE getBBodyState #-}
+  -- setBBodyState _ = updateNewEpochState
+  -- {-# INLINE setBBodyState #-}
+  -- getBBodyEnv _ = mkBbodyEnv
+  -- {-# INLINE getBBodyEnv #-}
 
 class
-  ( BaseM (Core.EraRule "TICK" era) ~ BaseM (Core.EraRule "BBODY" era),
-    Signal (Core.EraRule "BBODY" era) ~ Block era,
-    BTError era ~ BlockTransitionError era,
+  ( Signal (Core.EraRule "BBODY" era) ~ Block era,
     ChainData (Block era),
     AnnotatedData (Block era),
     ChainData (BHeader (Crypto era)),
@@ -179,7 +176,9 @@ class
     Environment (Core.EraRule "TICK" era) ~ (),
     State (Core.EraRule "TICK" era) ~ NewEpochState era,
     Signal (Core.EraRule "TICK" era) ~ SlotNo,
-    STS (Core.EraRule "BBODY" era)
+    STS (Core.EraRule "BBODY" era),
+    BaseM (Core.EraRule "TICK" era) ~ ShelleyBase,
+    BaseM (Core.EraRule "BBODY" era) ~ ShelleyBase
   ) =>
   ApplyBlock era
   where
@@ -192,12 +191,12 @@ class
     NewEpochState era ->
     SlotNo ->
     NewEpochState era
-  default applyTick :: (ApplyBlock' era, GlobalEnvironment era ~ Globals) =>
+  default applyTick :: ApplyBlock' era =>
     Globals ->
     NewEpochState era ->
     SlotNo ->
     NewEpochState era
-  applyTick = applyTick' (Proxy :: Proxy era)
+  applyTick globals state slot = runReader (applyTick' (Proxy :: Proxy era) state slot) globals
   {-# INLINE applyTick #-}
 
   -- | Apply the block level ledger transition.
@@ -207,7 +206,7 @@ class
     NewEpochState era ->
     Block era ->
     m (NewEpochState era)
-  default applyBlock ::  (ApplyBlock' era, GlobalEnvironment era ~ Globals) =>
+  default applyBlock :: ApplyBlock' era =>
     (MonadError (BlockTransitionError era) m) =>
     Globals ->
     NewEpochState era ->
@@ -215,7 +214,7 @@ class
     m (NewEpochState era)
   applyBlock globals state blk =
     liftEither
-      $ applyBlock' (Proxy :: Proxy era) globals state blk
+      $ runReader (applyBlock' (Proxy :: Proxy era) state blk) globals
   {-# INLINE applyBlock #-}
 
   -- | Re-apply a ledger block to the same state it has been applied to before.
@@ -228,12 +227,12 @@ class
     NewEpochState era ->
     Block era ->
     NewEpochState era
-  default reapplyBlock :: (ApplyBlock' era, GlobalEnvironment era ~ Globals) =>
+  default reapplyBlock :: ApplyBlock' era =>
     Globals ->
     NewEpochState era ->
     Block era ->
     NewEpochState era
-  reapplyBlock = reapplyBlock' (Proxy :: Proxy era)
+  reapplyBlock globals state blk = runReader (reapplyBlock' (Proxy :: Proxy era) state blk) globals
   {-# INLINE reapplyBlock #-}
 
 instance PraosCrypto crypto => ApplyBlock (ShelleyEra crypto)

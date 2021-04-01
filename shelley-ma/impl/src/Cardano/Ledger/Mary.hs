@@ -11,6 +11,7 @@ import Cardano.Ledger.ShelleyMA.Rules.Utxo ()
 import Cardano.Ledger.ShelleyMA.Rules.Utxow ()
 import Shelley.Spec.Ledger.API
   ( ApplyBlock,
+    ApplyBlock',
     ApplyTx,
     GetLedgerView,
     PraosCrypto,
@@ -21,8 +22,10 @@ type MaryEra = ShelleyMAEra 'Mary
 
 instance PraosCrypto c => ApplyTx (MaryEra c)
 
+instance PraosCrypto c => ApplyBlock' (MaryEra c)
 instance PraosCrypto c => ApplyBlock (MaryEra c)
 
 instance PraosCrypto c => GetLedgerView (MaryEra c)
+
 
 instance PraosCrypto c => ShelleyBasedEra (MaryEra c)

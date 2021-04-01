@@ -17,8 +17,6 @@
 module Test.Shelley.Spec.Ledger.Example where
 
 import Control.Monad
--- import Control.Arrow (left, right)
-import Control.Monad.Reader
 import Control.State.Transition.Extended
 import Data.Foldable
 import Data.Functor.Compose
@@ -119,9 +117,6 @@ class ModelTransactionValidator a where
     -> [MOutput a]
     -> Valid (MInvalidTxn a) ()
 
-
-
-
 data ModelTxnX a
 
 instance
@@ -151,14 +146,8 @@ instance
   type State (ModelChain a) = ModelChainState a
   type Environment (ModelChain a) = ()
   type Signal (ModelChain a) = [ModelTxn a]
-  type BaseM (ModelChain a) = Reader ()
-
-  -- this is nonsense
-  initialRules = pure $ pure $ ModelChainState Map.empty Set.empty
 
   transitionRules = pure modelChainTransitionRule
-
-
 
 
 instance
@@ -242,7 +231,6 @@ instance Default (ModelChainState a) where
 
 instance STS V1_Tick where
   type Environment V1_Tick = ()
-  type BaseM V1_Tick = Reader (GlobalEnvironment V1)
   type PredicateFailure V1_Tick = Void
   type State V1_Tick = (Int, State (ModelChain V1))
   type Signal V1_Tick = ()
@@ -252,13 +240,11 @@ instance STS V1_Tick where
 
 
 instance ApplyBlock' V1 where
-  type GlobalEnvironment V1 = ()
-  type BTError V1 = [[PredicateFailure (ModelChain V1)]]
 
   getBBodyState _ = snd
   setBBodyState _ (slot, _) st = (slot, st)
   getBBodyEnv _ _ = ()
-  wrapBlockError _ = id
+  -- wrapBlockError _ = id
 
 genStateFromAccounts :: Ord (MTxId a) => MTxId a -> [MOutput a] -> ModelChainState a
 genStateFromAccounts txid xs = ModelChainState
@@ -267,7 +253,7 @@ genStateFromAccounts txid xs = ModelChainState
 
 testExample :: IO ()
 testExample = do
-  let p = print . flip runReader ()
+  let p = print
 
   p $ applySTSList (Proxy :: Proxy (ModelChain V1))
     (genStateFromAccounts 0 [("alice", 2000)])
