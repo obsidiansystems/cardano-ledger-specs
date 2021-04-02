@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -10,6 +11,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TupleSections #-}
 
 -- | Interface to the block validation and chain extension logic in the Shelley
 -- API.
@@ -19,7 +21,7 @@ module Shelley.Spec.Ledger.API.Validation
     BlockTransitionError (..),
     chainChecks,
     ApplyBlock'(..),
-    runTrace, ApplyBlockData(..),
+    runApplyBlockData, ApplyBlockData(..),
     TraceApplyBlock(..),
     ModelTxId(..), ModelAddress(..), ModelValue(..), ModelTxIn(..),
     ModelTxOut(..), ModelTx(..), ModelBlock(..)
@@ -30,7 +32,6 @@ import Cardano.Ledger.Core (AnnotatedData, ChainData, SerialisableData)
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Crypto, Era)
 import Cardano.Ledger.Shelley (ShelleyEra)
-import Control.Arrow (left, right)
 import Control.Monad.Except
 import Control.Monad.Trans.Reader (runReader)
 import Control.State.Transition.Extended
@@ -40,7 +41,7 @@ import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.BaseTypes (Globals (..))
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.BlockChain
-import Shelley.Spec.Ledger.TxBody
+-- import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
 import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import qualified Shelley.Spec.Ledger.STS.Bbody as STS
@@ -50,9 +51,10 @@ import Shelley.Spec.Ledger.Slot (SlotNo)
 import Data.Proxy
 import Numeric.Natural
 import Data.Set (Set)
-import Data.Kind (Type)
-import Control.Monad.State (StateT)
-import Data.Map (Map)
+import Data.Bifunctor
+-- import Data.Kind (Type)
+-- import Control.Monad.State (StateT)
+-- import Data.Map (Map)
 
 {-------------------------------------------------------------------------------
   Block validation API
@@ -80,7 +82,6 @@ data ModelBlock = ModelBlock
 
 
 class TraceApplyBlock era where
-
   toEra
     :: proxy era
     -> [ModelTxOut]
@@ -98,27 +99,52 @@ data ApplyBlockData era where
   ApplyTick :: Signal (Core.EraRule "TICK" era) -> ApplyBlockData era
   ApplyBlock :: Signal (Core.EraRule "BBODY" era) -> ApplyBlockData era
 
-runTrace
+
+data ApplyBlockTransitionError era
+   = ApplyBlockTransitionError_Block (BlockTransitionError era)
+   | ApplyBlockTransitionError_Tick (TickTransitionError era)
+
+type ApplyBlockError era =
+  ( ApplyBlockTransitionError era
+  , State (Core.EraRule "TICK" era)
+  , ApplyBlockData era
+  )
+
+runApplyBlockData
   :: forall era. ApplyBlock' era
-  => State (Core.EraRule "TICK" era)
+  => ApplySTSOpts
+  -> State (Core.EraRule "TICK" era)
   -> [ApplyBlockData era]
-  -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
-runTrace = go
+  -> BaseM (Core.EraRule "TICK" era)
+    (Either (ApplyBlockError era) (State (Core.EraRule "TICK" era)))
+runApplyBlockData opts = go
   where
+    loop
+      :: ([a] -> (ApplyBlockTransitionError era))
+      -> ApplyBlockData era
+      -> [ApplyBlockData era]
+      -> (State (Core.EraRule "TICK" era), [[a]])
+      -> BaseM (Core.EraRule "TICK" era)
+        (Either (ApplyBlockError era) (State (Core.EraRule "TICK" era)))
+    loop _ _ xs (good, []) = go good xs
+    loop c x _ (st, bad) = pure . Left . (,st,x) . c $ join bad
+    {-# INLINE loop #-}
+
     go
       :: State (Core.EraRule "TICK" era)
       -> [ApplyBlockData era]
-      -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
+      -> BaseM (Core.EraRule "TICK" era)
+        (Either (ApplyBlockError era) (State (Core.EraRule "TICK" era)))
     go st [] = pure (Right st)
     go st0 (x:xs) = do
-      x' <- case x of
-        ApplyTick tick -> Right <$> applyTick' (Proxy :: Proxy era) st0 tick
-        ApplyBlock blk -> applyBlock' (Proxy :: Proxy era) st0 blk
-      case x' of
-        Left bad -> pure (Left bad)
-        Right good -> go good xs
+      case x of
+        ApplyTick tick -> applyTickOpts' opts (Proxy :: Proxy era) st0 tick
+          >>= loop (ApplyBlockTransitionError_Tick . TickTransitionError) x xs
+        ApplyBlock blk -> applyBlockOpts' opts (Proxy :: Proxy era) st0 blk
+          >>= loop (ApplyBlockTransitionError_Block . BlockTransitionError) x xs
 
--- TODO: pass ApplySTSOpts
+-- TODO: move implementations out of class
+-- TODO: move defaulting methods to a suitable "deriving via" newtype
 class
     ( STS (Core.EraRule "TICK" era)
     , STS (Core.EraRule "BBODY" era)
@@ -134,17 +160,33 @@ class
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "TICK" era)
     -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era))
-  default applyTick' :: proxy era
+  applyTick' proxy st0 sig = flip fmap (applyTickOpts' defaultOpts proxy st0 sig) $ \case
+    (st, []) -> st
+    (_, pfs) -> error $ "Panic! applyTick failed: " <> show pfs
+    where
+      defaultOpts = ApplySTSOpts
+        { asoAssertions = AssertionsOff,
+          asoValidation = ValidateAll
+        }
+  {-# INLINE applyTick' #-}
+
+  -- | Apply the header level ledger transition.
+  --
+  -- This handles checks and updates that happen on a slot tick, as well as a
+  -- few header level checks, such as size constraints.
+  applyTickOpts' :: ApplySTSOpts
+    -> proxy era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "TICK" era)
-    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era))
-  applyTick' _ state hdr =
-    either err id <$> applySTS @(Core.EraRule "TICK" era)
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era), [[PredicateFailure (Core.EraRule "TICK" era)]])
+  default applyTickOpts' :: ApplySTSOpts
+    -> proxy era
+    -> State (Core.EraRule "TICK" era)
+    -> Signal (Core.EraRule "TICK" era)
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era), [[PredicateFailure (Core.EraRule "TICK" era)]])
+  applyTickOpts' opts _ state hdr = applySTSOpts @(Core.EraRule "TICK" era) opts
       ( TRC ((), state, hdr) )
-    where
-      err :: Show a => a -> b
-      err msg = error $ "Panic! applyTick failed: " <> show msg
-  {-# INLINE applyTick' #-}
+  {-# INLINE applyTickOpts' #-}
 
 
   getBBodyState :: proxy era -> State (Core.EraRule "TICK" era) -> State (Core.EraRule "BBODY" era)
@@ -171,31 +213,36 @@ class
     ) => proxy era -> State (Core.EraRule "TICK" era) -> Environment (Core.EraRule "BBODY" era)
   getBBodyEnv _ = mkBbodyEnv
   {-# INLINE getBBodyEnv #-}
-  wrapBlockError :: proxy era -> [[PredicateFailure (Core.EraRule "BBODY" era)]] -> BlockTransitionError era
-  wrapBlockError _ = BlockTransitionError . join
-  {-# INLINE wrapBlockError #-}
 
   -- | Apply the block level ledger transition.
   applyBlock' :: proxy era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "BBODY" era)
     -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
-  default applyBlock' :: proxy era
+  applyBlock' proxy st0 sig = flip fmap (applyBlockOpts' defaultOpts proxy st0 sig) $ \case
+    (st, []) -> Right st
+    (_, pfs) -> Left . BlockTransitionError $ join pfs
+    where
+      defaultOpts = ApplySTSOpts
+        { asoAssertions = AssertionsOff,
+          asoValidation = ValidateAll
+        }
+  {-# INLINE applyBlock' #-}
+
+  -- | Apply the block level ledger transition.
+  applyBlockOpts' :: ApplySTSOpts -> proxy era
     -> State (Core.EraRule "TICK" era)
     -> Signal (Core.EraRule "BBODY" era)
-    -> BaseM (Core.EraRule "TICK" era) (Either (BlockTransitionError era) (State (Core.EraRule "TICK" era)))
-  applyBlock' _ state blk =
-        right (setBBodyState proxy state)
-      . left (wrapBlockError proxy)
-      <$> res
+    -> BaseM (Core.EraRule "TICK" era) (State (Core.EraRule "TICK" era), [[PredicateFailure (Core.EraRule "BBODY" era)]])
+  applyBlockOpts' opts _ state blk = first (setBBodyState proxy state) <$> res
     where
       proxy :: Proxy era
       proxy = Proxy
 
-      res = applySTS @(Core.EraRule "BBODY" era) $
+      res = applySTSOpts @(Core.EraRule "BBODY" era) opts $
           TRC (getBBodyEnv proxy state, bbs, blk)
       bbs = getBBodyState proxy state
-  {-# INLINE applyBlock' #-}
+  {-# INLINE applyBlockOpts' #-}
 
 
   -- | Re-apply a ledger block to the same state it has been applied to before.
