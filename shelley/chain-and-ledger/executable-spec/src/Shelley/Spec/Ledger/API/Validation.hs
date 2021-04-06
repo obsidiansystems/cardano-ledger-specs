@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DefaultSignatures #-}
@@ -41,7 +42,6 @@ import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.BaseTypes (Globals (..))
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import Shelley.Spec.Ledger.BlockChain
--- import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
 import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import qualified Shelley.Spec.Ledger.STS.Bbody as STS
@@ -52,6 +52,12 @@ import Data.Proxy
 import Numeric.Natural
 import Data.Set (Set)
 import Data.Bifunctor
+-- import Data.Default.Class
+-- import qualified Data.Map as Map
+-- import qualified Cardano.Ledger.Crypto as CC
+-- import qualified Cardano.Crypto.Hash.Class as CC
+-- import Control.Monad.State (evalStateT)
+-- import Data.Functor.Identity
 -- import Data.Kind (Type)
 -- import Control.Monad.State (StateT)
 -- import Data.Map (Map)
@@ -62,8 +68,11 @@ import Data.Bifunctor
 
 
 newtype ModelTxId = ModelTxId Integer
+  deriving (Eq, Ord, Show)
 newtype ModelAddress = ModelAddress String
+  deriving (Eq, Ord, Show)
 newtype ModelValue = ModelValue Integer
+  deriving (Eq, Ord, Show)
 
 data ModelTxIn = ModelTxIn ModelTxId Natural
 data ModelTxOut = ModelTxOut ModelAddress ModelValue
@@ -86,13 +95,10 @@ class TraceApplyBlock era where
     :: proxy era
     -> [ModelTxOut]
     -> [ModelBlock]
-    -> BaseM era
+    -> BaseM (Core.EraRule "TICK" era)
       ( State (Core.EraRule "TICK" era)
       , [ApplyBlockData era]
       )
-
--- instance PraosCrypto crypto => TraceApplyBlock (ShelleyEra crypto) where
---   toEra _ utxos blocks = _
 
 
 data ApplyBlockData era where

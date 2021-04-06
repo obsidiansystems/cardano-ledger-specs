@@ -28,6 +28,7 @@ library
   exposed-modules:
     Test.Cardano.Crypto.VRF.Fake
     Test.Screenplay
+    Test.Shelley.Spec.Ledger.ApplyBlock
     Test.Shelley.Spec.Ledger.BenchmarkFunctions
     Test.Shelley.Spec.Ledger.ConcreteCryptoTypes
     Test.Shelley.Spec.Ledger.Example

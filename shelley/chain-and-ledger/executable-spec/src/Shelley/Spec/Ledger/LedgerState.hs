@@ -31,6 +31,7 @@ module Shelley.Spec.Ledger.LedgerState
     DPState (..),
     DState (..),
     EpochState (..),
+    esLStateLens,
     UpecState (..),
     FutureGenDeleg (..),
     InstantaneousRewards (..),
@@ -74,6 +75,7 @@ module Shelley.Spec.Ledger.LedgerState
     createRUpd,
     --
     NewEpochState (..),
+    nesEsLens,
     getGKeys,
     updateNES,
     circulation,
@@ -477,6 +479,12 @@ data EpochState era = EpochState
   }
   deriving (Generic)
 
+esLStateLens :: Functor f
+  => (LedgerState era -> f (LedgerState era))
+  -> EpochState era -> f (EpochState era)
+esLStateLens a2b s = (\b -> s {esLState = b}) <$> a2b (esLState s)
+{-# INLINE esLStateLens #-}
+
 type TransEpoch (c :: Type -> Constraint) era = (TransLedgerState c era)
 
 deriving stock instance
@@ -611,6 +619,13 @@ data NewEpochState era = NewEpochState
     nesPd :: !(PoolDistr (Crypto era))
   }
   deriving (Generic)
+
+nesEsLens :: Functor f
+  => (EpochState era -> f (EpochState era))
+  -> NewEpochState era -> f (NewEpochState era)
+nesEsLens a2b s = (\b -> s {nesEs = b}) <$> a2b (nesEs s)
+{-# INLINE nesEsLens #-}
+
 
 deriving stock instance
   (TransUTxOState Show era) =>
