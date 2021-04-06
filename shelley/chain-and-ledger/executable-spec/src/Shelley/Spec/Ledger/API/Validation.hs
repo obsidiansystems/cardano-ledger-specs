@@ -71,7 +71,7 @@ newtype ModelTxId = ModelTxId Integer
   deriving (Eq, Ord, Show)
 newtype ModelAddress = ModelAddress String
   deriving (Eq, Ord, Show)
-newtype ModelValue = ModelValue Integer
+newtype ModelValue = ModelValue { unModelValue :: Integer }
   deriving (Eq, Ord, Show)
 
 data ModelTxIn = ModelTxIn ModelTxId Natural
