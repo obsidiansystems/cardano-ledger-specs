@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -14,11 +15,35 @@ import Test.Shelley.Spec.Ledger.UnitTests (unitTests)
 import Test.Tasty
 import Test.TestScenario (TestScenario (..), mainWithTestScenario)
 
+
+import Control.Monad.Reader
+import Data.Functor.Identity
+import Data.Proxy
+import Shelley.Spec.Ledger.API.Validation
+import Test.Shelley.Spec.Ledger.ApplyBlock ()
+import Cardano.Ledger.Shelley
+import Test.Tasty.QuickCheck
+import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (C_Crypto)
+import Test.Shelley.Spec.Ledger.Utils (testGlobals)
+import Control.State.Transition.Extended
+
 tests :: TestTree
 tests = askOption $ \case
   Nightly -> nightlyTests
   Fast -> fastTests
   _ -> mainTests
+
+newTestFw :: TestTree
+newTestFw = testGroup "new-test-fw"
+  [ testProperty "noop" $ do
+      let
+        result = runIdentity $ flip runReaderT testGlobals $ do
+          (st, blks) <- (toEra (Proxy :: Proxy (ShelleyEra C_Crypto)) [] [])
+          runApplyBlockData (ApplySTSOpts AssertionsAll ValidateAll) st blks
+      case result of
+        Right _ -> property True
+        Left bad -> counterexample (show bad) False
+  ]
 
 mainTests :: TestTree
 mainTests =
@@ -31,7 +56,8 @@ mainTests =
       multisigExamples,
       unitTests,
       setAlgTest,
-      prettyTest
+      prettyTest,
+      newTestFw
     ]
 
 nightlyTests :: TestTree

@@ -101,14 +101,43 @@ class TraceApplyBlock era where
       )
 
 
-data ApplyBlockData era where
-  ApplyTick :: Signal (Core.EraRule "TICK" era) -> ApplyBlockData era
-  ApplyBlock :: Signal (Core.EraRule "BBODY" era) -> ApplyBlockData era
+data ApplyBlockData era
+  = ApplyTick (Signal (Core.EraRule "TICK" era))
+  | ApplyBlock (Signal (Core.EraRule "BBODY" era))
 
+deriving instance
+  ( Eq (Signal (Core.EraRule "TICK" era))
+  , Eq (Signal (Core.EraRule "BBODY" era))
+  ) => Eq (ApplyBlockData era)
+
+deriving instance
+  ( Ord (Signal (Core.EraRule "TICK" era))
+  , Ord (Signal (Core.EraRule "BBODY" era))
+  ) => Ord (ApplyBlockData era)
+
+deriving instance
+  ( Show (Signal (Core.EraRule "TICK" era))
+  , Show (Signal (Core.EraRule "BBODY" era))
+  ) => Show (ApplyBlockData era)
 
 data ApplyBlockTransitionError era
    = ApplyBlockTransitionError_Block (BlockTransitionError era)
    | ApplyBlockTransitionError_Tick (TickTransitionError era)
+
+deriving instance
+ ( Show (BlockTransitionError era)
+ , Show (TickTransitionError era)
+ ) => Show (ApplyBlockTransitionError era)
+
+deriving instance
+ ( Eq (BlockTransitionError era)
+ , Eq (TickTransitionError era)
+ ) => Eq (ApplyBlockTransitionError era)
+
+deriving instance
+ ( Ord (BlockTransitionError era)
+ , Ord (TickTransitionError era)
+ ) => Ord (ApplyBlockTransitionError era)
 
 type ApplyBlockError era =
   ( ApplyBlockTransitionError era
