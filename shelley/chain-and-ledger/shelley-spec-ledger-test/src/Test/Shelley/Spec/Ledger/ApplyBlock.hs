@@ -9,7 +9,8 @@
 module Test.Shelley.Spec.Ledger.ApplyBlock where
 
 import Control.Monad.State
-import Data.Functor.Identity
+import Control.Monad.Reader (MonadReader(..), asks)
+import Shelley.Spec.Ledger.BaseTypes
 import Data.Proxy
 import Data.Traversable
 import Numeric.Natural
@@ -17,23 +18,18 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Sequence.Strict as StrictSeq
 
-import Control.State.Transition.Extended
 import Cardano.Ledger.Shelley (ShelleyEra)
+import Cardano.Slotting.Slot (WithOrigin(..), EpochNo(..), SlotNo(..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.API.Validation
+import qualified Cardano.Ledger.Val as Val
 import Shelley.Spec.Ledger.Address
-import Shelley.Spec.Ledger.BaseTypes
-  ( Network (..)
-  , StrictMaybe (..)
-  )
-import Shelley.Spec.Ledger.BaseTypes (Nonce (..))
 import Shelley.Spec.Ledger.Coin
 import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.LedgerState
 import qualified Cardano.Crypto.Hash.Class as CHC
 import Cardano.Crypto.Util (SignableRepresentation)
 import qualified Cardano.Crypto.KES.Class as KES
-import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Crypto (KES, DSIGN)
 import qualified Shelley.Spec.Ledger.UTxO as UTxO
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
@@ -76,7 +72,6 @@ instance
     , DSIGN.Signable (DSIGN crypto) ~ SignableRepresentation
     ) => TraceApplyBlock (ShelleyEra crypto) where
   toEra _ utxos blocks = do
-    nes <- reapplySTS @(Core.EraRule "TICK" (ShelleyEra crypto)) (IRC ())
     let
       initialState :: ShelleyEraState crypto
       initialState = ShelleyEraState
@@ -89,8 +84,6 @@ instance
 
       myGenEnv = genEnv (Proxy :: Proxy (ShelleyEra crypto))
 
-      set :: ((a -> Identity b) -> (s -> Identity t)) -> b -> s -> t
-      set l b s = runIdentity (l (\_ -> Identity b) s)
 
       genesisHash = TxId $ CHC.castHash $ CHC.hashWith id "TEST GENESIS"
       genesisHash' = HashHeader $ CHC.castHash $ CHC.hashWith id "TEST GENESIS"
@@ -157,14 +150,30 @@ instance
         put $ st {_prevHash = getBHeaderHash newBlock }
         pure newBlock
 
+      -- Tick doesn't have an Initial Rule, we must resort to special means to
+      -- get "an" initial state.
+      -- -- reapplySTS @(Core.EraRule "TICK" (ShelleyEra crypto)) (IRC ())
+      nes :: forall m.
+        ( MonadState (ShelleyEraState crypto) m
+        , MonadReader Globals m
+        )
+        => UTxO.UTxO (ShelleyEra crypto)
+        -> m (NewEpochState (ShelleyEra crypto))
+      nes utxo0 = do
+        maxLLSupply <- Coin . fromIntegral <$> asks maxLovelaceSupply
+
+        pure $ chainNes $ initialShelleyState
+          (At $ LastAppliedBlock (BlockNo 0) (SlotNo 0) (genesisHash'))
+          (EpochNo 0)
+          utxo0
+          (maxLLSupply Val.<-> Val.coin (UTxO.balance utxo0))
+          Map.empty
+          (emptyPParams)
+          (hashHeaderToNonce (genesisHash'))
 
     flip evalStateT initialState $ do
       genesisUtxos <- traverse mkGenTxOut (zip utxos [0..])
-      let
-        nes' = set (nesEsLens . esLStateLens) ledgerState nes
-        ledgerState = genesisState @(ShelleyEra crypto) Map.empty
-          . UTxO.UTxO
-          $ Map.fromList genesisUtxos
+      nes' <- nes $ UTxO.UTxO $ Map.fromList genesisUtxos
 
       blocks' :: [[ApplyBlockData (ShelleyEra crypto)]] <- for blocks $ \block -> do
         newBlock <- mkBlock' block

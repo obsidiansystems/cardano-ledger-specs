@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE GADTs #-}
@@ -21,7 +22,7 @@ module Shelley.Spec.Ledger.API.Validation
     TickTransitionError (..),
     BlockTransitionError (..),
     chainChecks,
-    ApplyBlock'(..),
+    ApplyBlock'(..), ApplyBlockError,
     runApplyBlockData, ApplyBlockData(..),
     TraceApplyBlock(..),
     ModelTxId(..), ModelAddress(..), ModelValue(..), ModelTxIn(..),
@@ -52,6 +53,7 @@ import Data.Proxy
 import Numeric.Natural
 import Data.Set (Set)
 import Data.Bifunctor
+import GHC.Exts as GHC
 -- import Data.Default.Class
 -- import qualified Data.Map as Map
 -- import qualified Cardano.Ledger.Crypto as CC
@@ -68,14 +70,16 @@ import Data.Bifunctor
 
 
 newtype ModelTxId = ModelTxId Integer
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Num)
 newtype ModelAddress = ModelAddress String
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, IsString)
 newtype ModelValue = ModelValue { unModelValue :: Integer }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Num)
 
 data ModelTxIn = ModelTxIn ModelTxId Natural
+  deriving (Eq, Ord, Show)
 data ModelTxOut = ModelTxOut ModelAddress ModelValue
+  deriving (Eq, Ord, Show)
 
 data ModelTx = ModelTx
   { _mtxId :: !ModelTxId
