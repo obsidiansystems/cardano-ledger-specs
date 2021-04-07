@@ -59,6 +59,9 @@ let
           };
         };
 
+        packages.voltaire-prototype.configureFlags = [ "--ghc-option=-Werror" ];
+        # packages.voltaire-prototype-test.configureFlags = [ "--ghc-option=-Werror" ];
+
       }
     ];
   };
