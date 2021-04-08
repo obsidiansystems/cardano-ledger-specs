@@ -17,24 +17,35 @@ import Numeric.Natural
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Sequence.Strict as StrictSeq
+import Data.Foldable
+import Data.Semigroup (Max(..))
 
+-- import Control.State.Transition.Extended
 import Cardano.Ledger.Shelley (ShelleyEra)
 import Cardano.Slotting.Slot (WithOrigin(..), EpochNo(..), SlotNo(..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.API.Validation
 import qualified Cardano.Ledger.Val as Val
 import Shelley.Spec.Ledger.Address
+-- import Shelley.Spec.Ledger.BaseTypes
+--   ( Network (..)
+--   , StrictMaybe (..)
+--   , maxLovelaceSupply
+--   )
+-- import Shelley.Spec.Ledger.BaseTypes (Nonce (..))
 import Shelley.Spec.Ledger.Coin
 import Shelley.Spec.Ledger.TxBody
 import Shelley.Spec.Ledger.LedgerState
 import qualified Cardano.Crypto.Hash.Class as CHC
 import Cardano.Crypto.Util (SignableRepresentation)
 import qualified Cardano.Crypto.KES.Class as KES
+-- import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Crypto (KES, DSIGN)
 import qualified Shelley.Spec.Ledger.UTxO as UTxO
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import Shelley.Spec.Ledger.Keys
 import Shelley.Spec.Ledger.BlockChain
+import Shelley.Spec.Ledger.STS.Chain
 import Shelley.Spec.Ledger.Tx
 -- import Cardano.Ledger.Era
 import Cardano.Slotting.Block
@@ -44,6 +55,8 @@ import Test.Shelley.Spec.Ledger.Generator.Core
 import Test.Shelley.Spec.Ledger.Generator.ShelleyEraGen ()
 import Test.Shelley.Spec.Ledger.Generator.Presets
 import Shelley.Spec.Ledger.OCert
+import Shelley.Spec.Ledger.PParams
+import Shelley.Spec.Ledger.Hashing
 
 type KeyPair' crypto = (KeyPair 'Payment crypto, KeyPair 'Staking crypto)
 
@@ -84,6 +97,7 @@ instance
 
       myGenEnv = genEnv (Proxy :: Proxy (ShelleyEra crypto))
 
+      maxTTL = maybe 1 getMax $ foldMap (Just . Max . _mbSlot) blocks
 
       genesisHash = TxId $ CHC.castHash $ CHC.hashWith id "TEST GENESIS"
       genesisHash' = HashHeader $ CHC.castHash $ CHC.hashWith id "TEST GENESIS"
@@ -121,12 +135,19 @@ instance
             , _certs = StrictSeq.empty
             , _wdrls = Wdrl Map.empty
             , _txfee = Coin . unModelValue $ _mtxFee mtx
-            , _ttl = 0
+            , _ttl = maxTTL
             , _txUpdate = SNothing
             , _mdHash = SNothing
             }
+
+          bodyHash = hashAnnotated realTxBody
+        wits <- fmap fold $ for (toList $ _mtxWitness mtx) $ \mAddr -> do
+          (keyP, _) <- getKeyPairFor mAddr
+          let wit = UTxO.makeWitnessVKey bodyHash keyP
+          pure $ mempty {addrWits = Set.singleton wit}
+
         put ses { _txIds = Map.insert (_mtxId mtx) (UTxO.txid realTxBody) (_txIds ses)}
-        pure (Tx realTxBody mempty SNothing)
+        pure (Tx realTxBody wits SNothing)
 
       mkBlock'
         :: forall m. (MonadState (ShelleyEraState crypto) m)
@@ -174,6 +195,7 @@ instance
     flip evalStateT initialState $ do
       genesisUtxos <- traverse mkGenTxOut (zip utxos [0..])
       nes' <- nes $ UTxO.UTxO $ Map.fromList genesisUtxos
+        -- ledgerState = genesisState @(ShelleyEra crypto) Map.empty
 
       blocks' :: [[ApplyBlockData (ShelleyEra crypto)]] <- for blocks $ \block -> do
         newBlock <- mkBlock' block

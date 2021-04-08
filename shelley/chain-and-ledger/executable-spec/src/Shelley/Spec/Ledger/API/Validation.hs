@@ -24,6 +24,7 @@ module Shelley.Spec.Ledger.API.Validation
     chainChecks,
     ApplyBlock'(..), ApplyBlockError,
     runApplyBlockData, ApplyBlockData(..),
+    ApplyBlockTransitionError(..),
     TraceApplyBlock(..),
     ModelTxId(..), ModelAddress(..), ModelValue(..), ModelTxIn(..),
     ModelTxOut(..), ModelTx(..), ModelBlock(..)
@@ -86,6 +87,7 @@ data ModelTx = ModelTx
   , _mtxInputs :: !(Set ModelTxIn)
   , _mtxOutputs :: ![ModelTxOut]
   , _mtxFee :: !ModelValue
+  , _mtxWitness :: !(Set ModelAddress)
   }
 
 data ModelBlock = ModelBlock
