@@ -146,8 +146,7 @@ data TxBodyRaw era = TxBodyRaw
     wdrls :: !(Wdrl (Crypto era)),
     txfee :: !Coin,
     vldt :: !ValidityInterval, -- imported from Timelocks
-    -- UPDATE THIS
-    update :: !(StrictMaybe (Update era)),
+    update :: !(Update era),
     adHash :: !(StrictMaybe (AuxiliaryDataHash (Crypto era))),
     mint :: !(Value era)
   }
@@ -166,7 +165,7 @@ deriving instance
   Eq (TxBodyRaw era)
 
 deriving instance
-  (TransValue Show era, Show (Proposal era), Show (VotePayload era)) =>
+  (TransValue Show era, VoltaireClass era) =>
   Show (TxBodyRaw era)
 
 deriving instance Generic (TxBodyRaw era)
@@ -222,7 +221,7 @@ txSparse (TxBodyRaw inp out cert wdrl fee (ValidityInterval bot top) up hash frg
     !> encodeKeyedStrictMaybe 3 top
     !> Omit null (Key 4 (E encodeFoldable cert))
     !> Omit (null . unWdrl) (Key 5 (To wdrl))
-    !> encodeKeyedStrictMaybe 6 up
+    !> Key 6 (To up)
     !> encodeKeyedStrictMaybe 7 hash
     !> encodeKeyedStrictMaybe 8 bot
     !> Omit isZero (Key 9 (E encodeMint frge))
@@ -234,7 +233,7 @@ bodyFields 2 = field (\x tx -> tx {txfee = x}) From
 bodyFields 3 = field (\x tx -> tx {vldt = (vldt tx) {invalidHereafter = x}}) (D (SJust <$> fromCBOR))
 bodyFields 4 = field (\x tx -> tx {certs = x}) (D (decodeStrictSeq fromCBOR))
 bodyFields 5 = field (\x tx -> tx {wdrls = x}) From
-bodyFields 6 = field (\x tx -> tx {update = x}) (D (SJust <$> fromCBOR))
+bodyFields 6 = field (\x tx -> tx {update = x}) (D fromCBOR)
 bodyFields 7 = field (\x tx -> tx {adHash = x}) (D (SJust <$> fromCBOR))
 bodyFields 8 = field (\x tx -> tx {vldt = (vldt tx) {invalidBefore = x}}) (D (SJust <$> fromCBOR))
 bodyFields 9 = field (\x tx -> tx {mint = x}) (D decodeMint)
@@ -249,7 +248,7 @@ initial =
     (Wdrl Map.empty)
     (Coin 0)
     (ValidityInterval SNothing SNothing)
-    SNothing
+    emptyUpdate
     SNothing
     zero
 
@@ -265,7 +264,7 @@ deriving instance
   Eq (TxBody era)
 
 deriving instance
-  (TransValue Show era, Show (Proposal era), Show (VotePayload era)) =>
+  (TransValue Show era, VoltaireClass era) =>
   Show (TxBody era)
 
 deriving instance Generic (TxBody era)
@@ -301,7 +300,7 @@ pattern TxBody ::
   Wdrl (Crypto era) ->
   Coin ->
   ValidityInterval ->
-  StrictMaybe (Update era) ->
+  Update era ->
   StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   Value era ->
   TxBody era
@@ -329,7 +328,7 @@ pattern TxBody' ::
   Wdrl (Crypto era) ->
   Coin ->
   ValidityInterval ->
-  StrictMaybe (Update era) ->
+  Update era ->
   StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   Value era ->
   TxBody era
@@ -390,7 +389,7 @@ instance HasField "txfee" (TxBody era) Coin where
 instance HasField "vldt" (TxBody era) ValidityInterval where
   getField (TxBodyConstr (Memo m _)) = getField @"vldt" m
 
-instance HasField "update" (TxBody era) (StrictMaybe (Update era)) where
+instance HasField "update" (TxBody era) (Update era) where
   getField (TxBodyConstr (Memo m _)) = getField @"update" m
 
 instance
@@ -426,7 +425,7 @@ ppTxBody (TxBodyConstr (Memo (TxBodyRaw i o d w fee vi u m mint) _)) =
       ("withdrawals", ppWdrl w),
       ("txfee", ppCoin fee),
       ("vldt", ppValidityInterval vi),
-      ("update", ppStrictMaybe ppUpdate u),
+      ("update", ppUpdate u),
       ("auxDataHash", ppStrictMaybe ppAuxiliaryDataHash m),
       ("mint", prettyA mint)
     ]

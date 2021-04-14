@@ -33,7 +33,6 @@ import Cardano.Ledger.Voltaire.Prototype.TxBody (TxBody)
 import qualified Cardano.Ledger.Val as Val
 import Cardano.Prelude (heapWordsUnpacked)
 import Cardano.Ledger.Voltaire.Prototype.Class
-import Cardano.Ledger.Voltaire.Prototype.Rules.Ppup (PPUP, PpupPredicateFailure)
 import Cardano.Slotting.Slot (SlotNo)
 import Control.Iterate.SetAlgebra (dom, eval, (∪), (⊆), (⋪), (◁))
 import Control.Monad.Trans.Reader (asks)
@@ -232,15 +231,15 @@ utxoTransition ::
     STS (UTXO era),
     Core.Tx era ~ Tx era,
     Embed (Core.EraRule "PPUP" era) (UTXO era),
-    Environment (Core.EraRule "PPUP" era) ~ PPUPEnv era,
-    State (Core.EraRule "PPUP" era) ~ PPUPState era,
-    Signal (Core.EraRule "PPUP" era) ~ Maybe (Update era),
+    Environment (Core.EraRule "PPUP" era) ~ PpupEnv era,
+    State (Core.EraRule "PPUP" era) ~ PpupState era,
+    Signal (Core.EraRule "PPUP" era) ~ Update era,
     HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
     HasField "mint" (Core.TxBody era) (Core.Value era),
     HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era)),
     HasField "vldt" (Core.TxBody era) ValidityInterval,
-    HasField "update" (Core.TxBody era) (StrictMaybe (Update era)),
+    HasField "update" (Core.TxBody era) (Update era),
     HasField "_minfeeA" (Core.PParams era) Natural,
     HasField "_minfeeB" (Core.PParams era) Natural,
     HasField "_keyDeposit" (Core.PParams era) Coin,
@@ -288,7 +287,7 @@ utxoTransition = do
   -- process Protocol Parameter Update Proposals
   ppup' <-
     trans @(Core.EraRule "PPUP" era) $
-      TRC (PPUPEnv slot pp (fromUtxoEnv env), ppup, txup tx)
+      TRC (fromUtxoEnv env, ppup, txup tx)
 
   -- Check that the mint field does not try to mint ADA. This is equivalent to
   -- the check `adaPolicy ∉ supp mint tx` in the spec.
@@ -368,9 +367,9 @@ instance
     Core.TxOut era ~ TxOut era,
     Core.Tx era ~ Tx era,
     Embed (Core.EraRule "PPUP" era) (UTXO era),
-    Environment (Core.EraRule "PPUP" era) ~ PPUPEnv era,
-    State (Core.EraRule "PPUP" era) ~ PPUPState era,
-    Signal (Core.EraRule "PPUP" era) ~ Maybe (Update era)
+    Environment (Core.EraRule "PPUP" era) ~ PpupEnv era,
+    State (Core.EraRule "PPUP" era) ~ PpupState era,
+    Signal (Core.EraRule "PPUP" era) ~ Update era
   ) =>
   STS (UTXO era)
   where
@@ -506,10 +505,10 @@ instance
 txup ::
   forall era.
   Era era =>
-  HasField "update" (Core.TxBody era) (StrictMaybe (Update era)) =>
+  HasField "update" (Core.TxBody era) (Update era) =>
   Core.Tx era ->
-  Maybe (Update era)
-txup tx = strictMaybeToMaybe (getField @"update" txbody)
+  Update era
+txup tx = getField @"update" txbody
   where
     txbody :: Core.TxBody era
     txbody = (getField @"body" tx)

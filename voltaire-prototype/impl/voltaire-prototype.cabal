@@ -40,7 +40,6 @@ library
     Cardano.Ledger.Voltaire.Prototype.Class
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxo
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxow
-    Cardano.Ledger.Voltaire.Prototype.Rules.Ppup
     Cardano.Ledger.Voltaire.Prototype.TxBody
 
   -- other-extensions:
@@ -58,7 +57,7 @@ library
     -- data-default-class,
     deepseq,
     -- groups,
-    -- mtl,
+    mtl,
     nothunks,
     -- prettyprinter,
     -- primitive,
