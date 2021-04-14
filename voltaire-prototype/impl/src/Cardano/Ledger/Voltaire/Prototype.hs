@@ -36,7 +36,6 @@ import Cardano.Ledger.ShelleyMA.Timelocks
     validateTimelock,
   )
 import Cardano.Ledger.Voltaire.Prototype.Class
-import Cardano.Ledger.Voltaire.Prototype.Rules.Ppup
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxo (UTXO)
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
@@ -69,18 +68,20 @@ data VoltairePrototypeEra (proto :: VoltairePrototype) c
 -- Voltaire instances
 --------------------------------------------------------------------------------
 instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'VoltairePrototype_One c) where
-  type Proposal (VoltairePrototypeEra 'VoltairePrototype_One c) = One.Proposal (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type Submitter (VoltairePrototypeEra 'VoltairePrototype_One c) = One.Submitter (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type Voter (VoltairePrototypeEra 'VoltairePrototype_One c) = One.Voter (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type VotePayload (VoltairePrototypeEra 'VoltairePrototype_One c) = One.VotePayload (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type VoltaireEnv (VoltairePrototypeEra 'VoltairePrototype_One c) = One.VoltaireEnv (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type VoltaireState (VoltairePrototypeEra 'VoltairePrototype_One c) = One.VoltaireState (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type SubmissionPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c) = One.SubmissionPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type VotePredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c) = One.VotePredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
+  type ProposalHeader (VoltairePrototypeEra 'VoltairePrototype_One c)
+    = One.ProposalHeader (VoltairePrototypeEra 'VoltairePrototype_One c)
+  type ProposalBody (VoltairePrototypeEra 'VoltairePrototype_One c)
+    = One.ProposalBody (VoltairePrototypeEra 'VoltairePrototype_One c)
+  type ProposalId (VoltairePrototypeEra 'VoltairePrototype_One c)
+    = One.ProposalId (VoltairePrototypeEra 'VoltairePrototype_One c)
+  type PpupEnv (VoltairePrototypeEra 'VoltairePrototype_One c)
+    = One.PpupEnv (VoltairePrototypeEra 'VoltairePrototype_One c)
+  type PpupState (VoltairePrototypeEra 'VoltairePrototype_One c)
+    = One.PpupState (VoltairePrototypeEra 'VoltairePrototype_One c)
+  type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
+    = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
   fromUtxoEnv = One.fromUtxoEnv
-  validateSubmissions = One.validateSubmissions
-  validateVotes = One.validateVotes
-  updateState = One.updateState
+  ppupTransition = One.ppupTransition
 
 --------------------------------------------------------------------------------
 -- Era and Shelley instances
