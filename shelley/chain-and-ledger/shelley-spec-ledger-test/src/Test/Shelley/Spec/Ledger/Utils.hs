@@ -77,14 +77,16 @@ import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Crypto (DSIGN)
 import qualified Cardano.Ledger.Crypto as CC (Crypto)
 import Cardano.Ledger.Era (Crypto (..))
+import qualified Cardano.Ledger.Era as Era
 import Cardano.Ledger.Shelley.Constraints
 import Cardano.Prelude (Coercible, asks)
 import Cardano.Slotting.EpochInfo
   ( epochInfoEpoch,
     epochInfoFirst,
     epochInfoSize,
-    fixedSizeEpochInfo,
+    fixedEpochInfo,
   )
+import Cardano.Slotting.Time (SystemStart (..), mkSlotLength)
 import Control.Monad.Trans.Reader (runReaderT)
 import Control.State.Transition.Extended hiding (Assertion)
 import Control.State.Transition.Trace
@@ -99,6 +101,7 @@ import Data.Functor.Identity (runIdentity)
 import Data.Maybe (fromMaybe)
 import Data.Ratio (Ratio)
 import Data.Sequence (Seq)
+import Data.Time.Clock.POSIX
 import Data.Word (Word64)
 import Shelley.Spec.Ledger.API
   ( ApplyBlock,
@@ -122,7 +125,7 @@ import Shelley.Spec.Ledger.BaseTypes
     mkNonceFromOutputVRF,
     mkUnitInterval,
   )
-import Shelley.Spec.Ledger.BlockChain (BHBody (..), Block, bhbody, bheader)
+import Shelley.Spec.Ledger.BlockChain (BHBody (..), Block, TxSeq, bhbody, bheader)
 import Shelley.Spec.Ledger.Credential (Credential (..), StakeReference (..))
 import Shelley.Spec.Ledger.Keys
   ( KeyPair,
@@ -138,7 +141,7 @@ import Shelley.Spec.Ledger.OCert (KESPeriod (..))
 import Shelley.Spec.Ledger.PParams (PParamsUpdate)
 import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv)
 import Shelley.Spec.Ledger.Slot (EpochNo, EpochSize (..), SlotNo)
-import Shelley.Spec.Ledger.Tx (Tx, TxOut)
+import Shelley.Spec.Ledger.Tx (Tx, TxOut, WitnessSet)
 import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (Mock)
 import Test.Tasty.HUnit
   ( Assertion,
@@ -152,11 +155,15 @@ type ShelleyTest era =
     UsesScript era,
     UsesAuxiliary era,
     UsesPParams era,
+    Era.TxSeq era ~ TxSeq era,
+    Era.TxInBlock era ~ Tx era,
     TxOut era ~ Core.TxOut era,
     PParams era ~ Core.PParams era,
     PParamsDelta era ~ PParamsUpdate era,
+    Core.Witnesses era ~ WitnessSet era,
     Split (Core.Value era),
-    Default (State (Core.EraRule "PPUP" era))
+    Default (State (Core.EraRule "PPUP" era)),
+    Core.AnnotatedData (Core.Witnesses era)
   )
 
 type ChainProperty era =
@@ -291,7 +298,7 @@ unsafeMkUnitInterval r =
 testGlobals :: Globals
 testGlobals =
   Globals
-    { epochInfo = fixedSizeEpochInfo $ EpochSize 100,
+    { epochInfo = fixedEpochInfo (EpochSize 100) (mkSlotLength 1),
       slotsPerKESPeriod = 20,
       stabilityWindow = 33,
       randomnessStabilisationWindow = 33,
@@ -301,7 +308,8 @@ testGlobals =
       maxMajorPV = 1000,
       maxLovelaceSupply = 45 * 1000 * 1000 * 1000 * 1000 * 1000,
       activeSlotCoeff = mkActiveSlotCoeff . unsafeMkUnitInterval $ 0.9,
-      networkId = Testnet
+      networkId = Testnet,
+      systemStart = SystemStart $ posixSecondsToUTCTime 0
     }
 
 runShelleyBase :: ShelleyBase a -> a

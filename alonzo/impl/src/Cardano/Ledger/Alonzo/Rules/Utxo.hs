@@ -16,22 +16,28 @@
 module Cardano.Ledger.Alonzo.Rules.Utxo where
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..), serialize)
+import Cardano.Ledger.Alonzo.Data (dataHashSize)
 import Cardano.Ledger.Alonzo.Rules.Utxos (UTXOS, UtxosPredicateFailure)
-import Cardano.Ledger.Alonzo.Scripts (ExUnits (..), Prices)
+import Cardano.Ledger.Alonzo.Scripts (ExUnits (..), Prices, pointWiseExUnits)
 import Cardano.Ledger.Alonzo.Tx
-  ( Tx (..),
+  ( ValidatedTx (..),
     isTwoPhaseScriptAddress,
     minfee,
     txbody,
+    wits',
   )
-import qualified Cardano.Ledger.Alonzo.Tx as Alonzo (Tx)
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo (ValidatedTx, txins)
 import Cardano.Ledger.Alonzo.TxBody
   ( TxOut (..),
+    txnetworkid',
   )
 import qualified Cardano.Ledger.Alonzo.TxBody as Alonzo (TxBody, TxOut)
+import qualified Cardano.Ledger.Alonzo.TxSeq as Alonzo (TxSeq)
+import Cardano.Ledger.Alonzo.TxWitness (TxWitness (txrdmrs'), nullRedeemers)
 import Cardano.Ledger.Coin
 import qualified Cardano.Ledger.Core as Core
-import Cardano.Ledger.Era (Crypto, Era, ValidateScript (..))
+import Cardano.Ledger.Era (Crypto, Era, TxInBlock, ValidateScript (..))
+import qualified Cardano.Ledger.Era as Era
 import qualified Cardano.Ledger.Mary.Value as Alonzo (Value)
 import Cardano.Ledger.Shelley.Constraints
   ( UsesPParams,
@@ -87,16 +93,9 @@ import Shelley.Spec.Ledger.TxBody (unWdrl)
 import Shelley.Spec.Ledger.UTxO
   ( UTxO (..),
     balance,
-    txins,
     txouts,
     unUTxO,
   )
-
--- Size of the datum hash attached to the output (could be Nothing)
-datHashSize :: TxOut era -> Integer
-datHashSize out = error "need heapwords instance"
-  where
-    _ = getField @"datahash" out
 
 -- | Compute an estimate of the size of storing one UTxO entry.
 -- This function implements the UTxO entry size estimate done by scaledMinDeposit in the ShelleyMA era
@@ -106,10 +105,10 @@ utxoEntrySize txout
     -- no non-ada assets, no hash datum case
     case dh of
       SNothing -> adaOnlyUTxOSize
-      _ -> adaOnlyUTxOSize + datHashSize txout
+      _ -> adaOnlyUTxOSize + dataHashSize dh
   -- add the size of Value and the size of datum hash (if present) to base UTxO size
   -- max function is a safeguard (in case calculation returns a smaller size than an ada-only entry)
-  | otherwise = max adaOnlyUTxOSize (utxoEntrySizeWithoutVal + Val.size v + datHashSize txout)
+  | otherwise = max adaOnlyUTxOSize (utxoEntrySizeWithoutVal + Val.size v + dataHashSize dh)
   where
     v = getField @"value" txout
     dh = getField @"datahash" txout
@@ -191,13 +190,17 @@ data UtxoPredicateFailure era
   | -- | The UTxO entries which have the wrong kind of script
     ScriptsNotPaidUTxO
       !(UTxO era)
-  | ExUnitsTooSmallUTxO
+  | ExUnitsTooBigUTxO
       !ExUnits
       -- ^ Max EXUnits from the protocol parameters
       !ExUnits
       -- ^ EXUnits supplied
   | -- | The inputs marked for use as fees contain non-ADA tokens
     FeeContainsNonADA !(Core.Value era)
+  | -- | Wrong Network ID in body
+    WrongNetworkInTxBody
+      !Network -- Actual Network ID
+      !Network -- Network ID in transaction body
   deriving (Generic)
 
 deriving stock instance
@@ -223,30 +226,31 @@ instance
   ) =>
   NoThunks (UtxoPredicateFailure era)
 
--- | feesOK is a predicate with 4 parts:
---   - Check that the fee is greater than the minimum fee for the transaction
---   - The fee inputs do not belong to non-native script addresses
---   - The fee inputs are sufficient to cover the fee marked in the transaction
---   - The fee inputs do not contain any non-ADA part
---
+-- | feesOK is a predicate with several parts. Some parts only apply in special circumstances.
+--   1) The fee paid is >= the minimum fee
+--   2) If the total ExUnits are 0 in both Memory and Steps, no further part needs to be checked.
+--   3) The fee inputs do not belong to non-native script addresses
+--   4) The fee inputs are sufficient to cover the fee marked in the transaction
+--   5) The fee inputs do not contain any non-ADA part
 --   As a TransitionRule it will return (), and raise an error (rather than
---   return) if any of the 4 parts are False.
+--   return) if any of the required parts are False.
 feesOK ::
   forall era.
   ( Era era,
     ValidateScript era, -- isTwoPhaseScriptAddress
     Core.TxOut era ~ Alonzo.TxOut era, -- balance requires this,
-    HasField "totExunits" (Core.Tx era) ExUnits, -- minfee requires this
+    Era.TxInBlock era ~ Alonzo.ValidatedTx era,
     HasField
       "txinputs_fee" -- to get inputs to pay the fees
       (Core.TxBody era)
       (Set (TxIn (Crypto era))),
     HasField "_minfeeA" (Core.PParams era) Natural,
     HasField "_minfeeB" (Core.PParams era) Natural,
-    HasField "_prices" (Core.PParams era) Prices
+    HasField "_prices" (Core.PParams era) Prices,
+    HasField "address" (Alonzo.TxOut era) (Addr (Crypto era))
   ) =>
   Core.PParams era ->
-  Core.Tx era ->
+  TxInBlock era ->
   UTxO era ->
   Rule (AlonzoUTXO era) 'Transition ()
 feesOK pp tx (UTxO m) = do
@@ -258,14 +262,18 @@ feesOK pp tx (UTxO m) = do
       nonNative txout = isTwoPhaseScriptAddress @era tx (getField @"address" txout)
       minimumFee = minfee @era pp tx
   -- Part 1
-  (Val.coin bal >= theFee) ?! FeeNotBalancedUTxO (Val.coin bal) theFee
-  -- Part 2
-  not (any nonNative utxoFees) ?! ScriptsNotPaidUTxO (UTxO (Map.filter nonNative utxoFees))
-  -- Part 3
   (minimumFee <= theFee) ?! FeeTooSmallUTxO minimumFee theFee
-  -- Part 4
-  Val.inject (Val.coin bal) == bal ?! FeeContainsNonADA bal
-  pure ()
+  -- Part 2
+  if nullRedeemers . txrdmrs' . wits' $ tx
+    then pure ()
+    else do
+      -- Part 3
+      not (any nonNative utxoFees) ?! ScriptsNotPaidUTxO (UTxO (Map.filter nonNative utxoFees))
+      -- Part 4
+      (Val.coin bal >= theFee) ?! FeeNotBalancedUTxO (Val.coin bal) theFee
+      -- Part 5
+      Val.inject (Val.coin bal) == bal ?! FeeContainsNonADA bal
+      pure ()
 
 -- ================================================================
 
@@ -278,7 +286,7 @@ utxoTransition ::
     Embed (Core.EraRule "UTXOS" era) (AlonzoUTXO era),
     Environment (Core.EraRule "UTXOS" era) ~ Shelley.UtxoEnv era,
     State (Core.EraRule "UTXOS" era) ~ Shelley.UTxOState era,
-    Signal (Core.EraRule "UTXOS" era) ~ Tx era,
+    Signal (Core.EraRule "UTXOS" era) ~ TxInBlock era,
     -- We leave Core.PParams abstract
     UsesPParams era,
     HasField "_minfeeA" (Core.PParams era) Natural,
@@ -288,14 +296,14 @@ utxoTransition ::
     HasField "_maxTxSize" (Core.PParams era) Natural,
     HasField "_prices" (Core.PParams era) Prices,
     HasField "_maxTxExUnits" (Core.PParams era) ExUnits,
-    HasField "_adaPerUTxOByte" (Core.PParams era) Coin,
+    HasField "_adaPerUTxOWord" (Core.PParams era) Coin,
     HasField "_maxValSize" (Core.PParams era) Natural,
     -- We fix Core.Tx, Core.Value, Core.TxBody, and Core.TxOut
     Core.TxOut era ~ Alonzo.TxOut era,
     Core.Value era ~ Alonzo.Value (Crypto era),
     Core.TxBody era ~ Alonzo.TxBody era,
-    Core.TxOut era ~ Alonzo.TxOut era,
-    Core.Tx era ~ Alonzo.Tx era
+    TxInBlock era ~ Alonzo.ValidatedTx era,
+    Era.TxSeq era ~ Alonzo.TxSeq era
   ) =>
   TransitionRule (AlonzoUTXO era)
 utxoTransition = do
@@ -307,13 +315,13 @@ utxoTransition = do
   inInterval slot (getField @"vldt" txb)
     ?! OutsideValidityIntervalUTxO (getField @"vldt" txb) slot
 
-  not (Set.null (txins @era txb)) ?! InputSetEmptyUTxO
+  not (Set.null (Alonzo.txins @era txb)) ?! InputSetEmptyUTxO
 
   feesOK pp tx utxo -- Generalizes the fee to small from earlier Era's
-  eval (txins @era txb ⊆ dom utxo)
-    ?! BadInputsUTxO (eval (txins @era txb ➖ dom utxo))
+  eval (Alonzo.txins @era txb ⊆ dom utxo)
+    ?! BadInputsUTxO (eval (Alonzo.txins @era txb ➖ dom utxo))
 
-  let consumed_ = consumed pp utxo txb
+  let consumed_ = consumed @era pp utxo txb
       produced_ = Shelley.produced @era pp stakepools txb
   consumed_ == produced_ ?! ValueNotConservedUTxO consumed_ produced_
 
@@ -347,9 +355,12 @@ utxoTransition = do
     ?! WrongNetworkWithdrawal
       ni
       (Set.fromList wdrlsWrongNetwork)
+  case txnetworkid' txb of
+    SNothing -> pure ()
+    SJust bid -> ni == bid ?! WrongNetworkInTxBody ni bid
 
   -- pointwise is used because non-ada amounts must be >= 0 too
-  let (Coin adaPerUTxOByte) = getField @"_adaPerUTxOByte" pp
+  let (Coin adaPerUTxOWord) = getField @"_adaPerUTxOWord" pp
       outputsTooSmall =
         filter
           ( \out ->
@@ -358,7 +369,7 @@ utxoTransition = do
                     Val.pointwise
                       (>=)
                       v
-                      (Val.inject $ Coin (utxoEntrySize out * adaPerUTxOByte))
+                      (Val.inject $ Coin (utxoEntrySize out * adaPerUTxOWord))
           )
           outputs
   null outputsTooSmall ?! OutputTooSmallUTxO outputsTooSmall
@@ -369,7 +380,7 @@ utxoTransition = do
 
   let maxTxEx = getField @"_maxTxExUnits" pp
       totExunits = getField @"totExunits" tx
-  totExunits <= maxTxEx ?! ExUnitsTooSmallUTxO maxTxEx totExunits
+  pointWiseExUnits (<=) totExunits maxTxEx ?! ExUnitsTooBigUTxO maxTxEx totExunits
 
   -- This does not appear in the Alonzo specification. But the test should be in every Era.
   -- Bootstrap (i.e. Byron) addresses have variable sized attributes in them.
@@ -396,7 +407,7 @@ instance
     Embed (Core.EraRule "UTXOS" era) (AlonzoUTXO era),
     Environment (Core.EraRule "UTXOS" era) ~ Shelley.UtxoEnv era,
     State (Core.EraRule "UTXOS" era) ~ Shelley.UTxOState era,
-    Signal (Core.EraRule "UTXOS" era) ~ Tx era,
+    Signal (Core.EraRule "UTXOS" era) ~ ValidatedTx era,
     -- We leave Core.PParams abstract
     UsesPParams era,
     HasField "_keyDeposit" (Core.PParams era) Coin,
@@ -404,22 +415,23 @@ instance
     HasField "_minfeeB" (Core.PParams era) Natural,
     HasField "_keyDeposit" (Core.PParams era) Coin,
     HasField "_poolDeposit" (Core.PParams era) Coin,
-    HasField "_adaPerUTxOByte" (Core.PParams era) Coin,
+    HasField "_adaPerUTxOWord" (Core.PParams era) Coin,
     HasField "_maxTxSize" (Core.PParams era) Natural,
     HasField "_prices" (Core.PParams era) Prices,
     HasField "_maxTxExUnits" (Core.PParams era) ExUnits,
-    HasField "_adaPerUTxOByte" (Core.PParams era) Coin,
+    HasField "_adaPerUTxOWord" (Core.PParams era) Coin,
     HasField "_maxValSize" (Core.PParams era) Natural,
     -- We fix Core.Value, Core.TxBody, and Core.TxOut
     Core.Value era ~ Alonzo.Value (Crypto era),
     Core.TxBody era ~ Alonzo.TxBody era,
     Core.TxOut era ~ Alonzo.TxOut era,
-    Core.Tx era ~ Alonzo.Tx era
+    Era.TxSeq era ~ Alonzo.TxSeq era,
+    Era.TxInBlock era ~ Alonzo.ValidatedTx era
   ) =>
   STS (AlonzoUTXO era)
   where
   type State (AlonzoUTXO era) = Shelley.UTxOState era
-  type Signal (AlonzoUTXO era) = Tx era
+  type Signal (AlonzoUTXO era) = ValidatedTx era
   type
     Environment (AlonzoUTXO era) =
       Shelley.UtxoEnv era
@@ -494,10 +506,12 @@ encFail (FeeNotBalancedUTxO a b) =
   Sum FeeNotBalancedUTxO 13 !> To a !> To b
 encFail (ScriptsNotPaidUTxO a) =
   Sum ScriptsNotPaidUTxO 14 !> To a
-encFail (ExUnitsTooSmallUTxO a b) =
-  Sum ExUnitsTooSmallUTxO 15 !> To a !> To b
+encFail (ExUnitsTooBigUTxO a b) =
+  Sum ExUnitsTooBigUTxO 15 !> To a !> To b
 encFail (FeeContainsNonADA a) =
   Sum FeeContainsNonADA 16 !> To a
+encFail (WrongNetworkInTxBody a b) =
+  Sum WrongNetworkInTxBody 17 !> To a !> To b
 
 decFail ::
   ( Era era,
@@ -522,8 +536,9 @@ decFail 11 = SumD TriesToForgeADA
 decFail 12 = SumD (OutputTooBigUTxO) <! D (decodeList fromCBOR)
 decFail 13 = SumD FeeNotBalancedUTxO <! From <! From
 decFail 14 = SumD ScriptsNotPaidUTxO <! From
-decFail 15 = SumD ExUnitsTooSmallUTxO <! From <! From
+decFail 15 = SumD ExUnitsTooBigUTxO <! From <! From
 decFail 16 = SumD FeeContainsNonADA <! From
+decFail 17 = SumD WrongNetworkInTxBody <! From <! From
 decFail n = Invalid n
 
 instance

@@ -1,10 +1,12 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MonoLocalBinds #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Benchmarks for transaction application
 module Bench.Cardano.Ledger.ApplyTx (applyTxBenchmarks) where
@@ -12,7 +14,7 @@ module Bench.Cardano.Ledger.ApplyTx (applyTxBenchmarks) where
 import Cardano.Binary
 import Cardano.Ledger.Allegra (AllegraEra)
 import qualified Cardano.Ledger.Core as Core
-import Cardano.Ledger.Era (Era)
+import Cardano.Ledger.Era (Era, ValidateScript)
 import Cardano.Ledger.Mary (MaryEra)
 import Cardano.Ledger.Shelley (ShelleyEra)
 import Control.DeepSeq (NFData (..))
@@ -28,13 +30,12 @@ import Shelley.Spec.Ledger.API
     ApplyTx,
     Coin (..),
     Globals,
-    LedgersEnv (..),
+    LedgerEnv (..),
     MempoolEnv,
     MempoolState,
     Tx,
     applyTxsTransition,
   )
-import Shelley.Spec.Ledger.PParams (PParams' (..))
 import Shelley.Spec.Ledger.Slot (SlotNo (SlotNo))
 import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (C_Crypto)
 import Test.Shelley.Spec.Ledger.Utils (testGlobals)
@@ -57,10 +58,11 @@ type MaryBench = MaryEra C_Crypto
 -- state shouldn't matter much.
 applyTxMempoolEnv :: Default (Core.PParams era) => MempoolEnv era
 applyTxMempoolEnv =
-  LedgersEnv
-    { ledgersSlotNo = SlotNo 71,
-      ledgersPp = def,
-      ledgersAccount = AccountState (Coin 45000000000) (Coin 45000000000)
+  LedgerEnv
+    { ledgerSlotNo = SlotNo 71,
+      ledgerIx = 0,
+      ledgerPp = def,
+      ledgerAccount = AccountState (Coin 45000000000) (Coin 45000000000)
     }
 
 data ApplyTxRes era = ApplyTxRes
@@ -140,7 +142,10 @@ applyTxGroup =
 deserialiseTxEra ::
   forall era.
   ( Era era,
-    ApplyTx era
+    ValidateScript era,
+    FromCBOR (Annotator (Core.TxBody era)),
+    FromCBOR (Annotator (Core.AuxiliaryData era)),
+    FromCBOR (Annotator (Core.Witnesses era))
   ) =>
   Proxy era ->
   Benchmark

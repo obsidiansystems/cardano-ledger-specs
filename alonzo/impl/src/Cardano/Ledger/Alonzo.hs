@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -17,19 +18,32 @@ module Cardano.Ledger.Alonzo
     AuxiliaryData,
     PParams,
     PParamsDelta,
-    Tx,
   )
 where
 
 import Cardano.Ledger.Alonzo.Data (AuxiliaryData (..), getPlutusData)
-import Cardano.Ledger.Alonzo.PParams (PParams, PParams' (..), PParamsUpdate, updatePParams)
+import Cardano.Ledger.Alonzo.PParams
+  ( PParams,
+    PParams' (..),
+    PParamsUpdate,
+    updatePParams,
+  )
+import qualified Cardano.Ledger.Alonzo.Rules.Bbody as Alonzo (AlonzoBBODY)
+import qualified Cardano.Ledger.Alonzo.Rules.Ledger as Alonzo (AlonzoLEDGER)
+import Cardano.Ledger.Alonzo.Rules.Utxo (UtxoPredicateFailure (UtxosFailure))
 import qualified Cardano.Ledger.Alonzo.Rules.Utxo as Alonzo (AlonzoUTXO)
-import qualified Cardano.Ledger.Alonzo.Rules.Utxos as Alonzo (UTXOS)
+import qualified Cardano.Ledger.Alonzo.Rules.Utxos as Alonzo (UTXOS, constructValidated)
+import Cardano.Ledger.Alonzo.Rules.Utxow (AlonzoPredFail (WrappedShelleyEraFailure))
 import qualified Cardano.Ledger.Alonzo.Rules.Utxow as Alonzo (AlonzoUTXOW)
 import Cardano.Ledger.Alonzo.Scripts (Script (..), isPlutusScript)
-import Cardano.Ledger.Alonzo.Tx (IsValidating (..), Tx, alonzoSeqTx, body', isValidating', wits')
+import Cardano.Ledger.Alonzo.Tx
+  ( ValidatedTx (..),
+    body',
+    wits',
+  )
 import Cardano.Ledger.Alonzo.TxBody (TxBody, TxOut (..), vldt')
 import Cardano.Ledger.Alonzo.TxInfo (validPlutusdata, validScript)
+import qualified Cardano.Ledger.Alonzo.TxSeq as Alonzo (TxSeq (..), hashTxSeq)
 import Cardano.Ledger.Alonzo.TxWitness (TxWitness (txwitsVKey'))
 import Cardano.Ledger.AuxiliaryData (AuxiliaryDataHash (..), ValidateAuxiliaryData (..))
 import qualified Cardano.Ledger.Core as Core
@@ -44,16 +58,23 @@ import Cardano.Ledger.Shelley.Constraints
     UsesValue,
   )
 import Cardano.Ledger.ShelleyMA.Timelocks (evalTimelock)
-import Control.State.Transition.Extended (STUB)
-import qualified Control.State.Transition.Extended as STS
+import Cardano.Ledger.Tx (Tx (Tx))
+import Control.Arrow (left)
+import Control.Monad.Except (liftEither, runExcept)
 import qualified Data.Set as Set
-import Data.Typeable (Typeable)
 import qualified Shelley.Spec.Ledger.API as API
 import qualified Shelley.Spec.Ledger.BaseTypes as Shelley
+import Shelley.Spec.Ledger.LedgerState
+  ( DPState (..),
+    DState (..),
+    PState (..),
+  )
 import Shelley.Spec.Ledger.Metadata (validMetadatum)
-import qualified Shelley.Spec.Ledger.STS.Bbody as STS
-import qualified Shelley.Spec.Ledger.STS.Bbody as Shelley
 import qualified Shelley.Spec.Ledger.STS.Epoch as Shelley
+import Shelley.Spec.Ledger.STS.Ledger
+  ( LedgerEnv (..),
+    LedgerPredicateFailure (UtxowFailure),
+  )
 import qualified Shelley.Spec.Ledger.STS.Mir as Shelley
 import qualified Shelley.Spec.Ledger.STS.Newpp as Shelley
 import qualified Shelley.Spec.Ledger.STS.Ocert as Shelley
@@ -62,17 +83,53 @@ import qualified Shelley.Spec.Ledger.STS.Rupd as Shelley
 import qualified Shelley.Spec.Ledger.STS.Snap as Shelley
 import qualified Shelley.Spec.Ledger.STS.Tick as Shelley
 import qualified Shelley.Spec.Ledger.STS.Upec as Shelley
+import Shelley.Spec.Ledger.STS.Utxow (UtxowPredicateFailure (UtxoFailure))
 import qualified Shelley.Spec.Ledger.Tx as Shelley
 import Shelley.Spec.Ledger.TxBody (witKeyHash)
+
+-- =====================================================
 
 -- | The Alonzo era
 data AlonzoEra c
 
-instance API.PraosCrypto c => API.ApplyTx (AlonzoEra c)
+instance
+  ( CC.Crypto c,
+    era ~ AlonzoEra c
+  ) =>
+  EraModule.Era (AlonzoEra c)
+  where
+  type Crypto (AlonzoEra c) = c
+
+instance API.PraosCrypto c => API.ApplyTx (AlonzoEra c) where
+  applyTx globals (LedgerEnv slot _ix pp _accnt) (utxostate, dpstate) tx =
+    do
+      (utxostate2, vtx) <-
+        liftEither
+          . left
+            ( API.ApplyTxError
+                . fmap
+                  ( UtxowFailure
+                      . WrappedShelleyEraFailure
+                      . UtxoFailure
+                      . UtxosFailure
+                  )
+            )
+          . runExcept
+          $ Alonzo.constructValidated globals utxoenv utxostate tx
+      pure ((utxostate2, dpstate), vtx)
+    where
+      delegs = (_genDelegs . _dstate) dpstate
+      stake = (_pParams . _pstate) dpstate
+      utxoenv = API.UtxoEnv slot pp stake delegs
+
+  applyTxInBlock = undefined
+
+  extractTx ValidatedTx {body, wits, auxiliaryData} =
+    Tx body wits auxiliaryData
 
 instance API.PraosCrypto c => API.ApplyBlock (AlonzoEra c)
 
-instance API.PraosCrypto c => API.GetLedgerView (AlonzoEra c)
+instance (API.PraosCrypto c) => API.GetLedgerView (AlonzoEra c)
 
 instance (CC.Crypto c) => Shelley.ValidateScript (AlonzoEra c) where
   isNativeScript x = not (isPlutusScript x)
@@ -80,11 +137,19 @@ instance (CC.Crypto c) => Shelley.ValidateScript (AlonzoEra c) where
     if isPlutusScript script
       then "\x01"
       else nativeMultiSigTag -- "\x00"
-  validateScript (TimelockScript timelock) tx = evalTimelock vhks (vldt' (body' tx)) timelock
+  validateScript (TimelockScript timelock) tx =
+    evalTimelock
+      vhks
+      (vldt' (body' tx))
+      timelock
     where
       vhks = Set.map witKeyHash (txwitsVKey' (wits' tx))
-  validateScript (PlutusScript _) _tx = True -- Plutus scripts are stripped out an run in function evalScripts
-  -- hashScript x = ...  We use the default method for hashScript
+  -- TODO check if instead we should filter plutus scripts before calling
+  validateScript (PlutusScript _) _tx = True
+
+-- To run a PlutusScript use Cardano.Ledger.Alonzo.TxInfo(runPLCScript)
+-- To run any Alonzo Script use Cardano.Ledger.Alonzo.PlutusScriptApi(evalScripts)
+-- hashScript x = ...  We use the default method for hashScript
 
 instance
   ( CC.Crypto c
@@ -95,21 +160,12 @@ instance
   -- initialState :: ShelleyGenesis era -> AdditionalGenesisConfig era -> NewEpochState era
   initialState _ _ = error "TODO: implement initialState"
 
-instance CC.Crypto c => UsesTxOut (AlonzoEra c) where
-  -- makeTxOut :: Proxy era -> Addr (Crypto era) -> Value era -> TxOut era
+instance (CC.Crypto c) => UsesTxOut (AlonzoEra c) where
   makeTxOut _proxy addr val = TxOut addr val Shelley.SNothing
-
-instance
-  (CC.Crypto c) =>
-  EraModule.Era (AlonzoEra c)
-  where
-  type Crypto (AlonzoEra c) = c
 
 type instance Core.TxOut (AlonzoEra c) = TxOut (AlonzoEra c)
 
 type instance Core.TxBody (AlonzoEra c) = TxBody (AlonzoEra c)
-
-type instance Core.TxOut (AlonzoEra c) = TxOut (AlonzoEra c)
 
 type instance Core.Value (AlonzoEra c) = V.Value c
 
@@ -118,8 +174,6 @@ type instance Core.Script (AlonzoEra c) = Script (AlonzoEra c)
 type instance Core.AuxiliaryData (AlonzoEra c) = AuxiliaryData (AlonzoEra c)
 
 type instance Core.PParams (AlonzoEra c) = PParams (AlonzoEra c)
-
-type instance Core.Tx (AlonzoEra c) = Tx (AlonzoEra c)
 
 type instance Core.Witnesses (AlonzoEra c) = TxWitness (AlonzoEra c)
 
@@ -142,10 +196,12 @@ instance CC.Crypto c => ValidateAuxiliaryData (AlonzoEra c) c where
       && all validScript scrips
       && all (validPlutusdata . getPlutusData) plutusdata
 
-instance CC.Crypto c => EraModule.BlockDecoding (AlonzoEra c) where
-  seqTx body wit isval aux = alonzoSeqTx body wit isval aux
-  seqIsValidating tx = case isValidating' tx of IsValidating b -> b
-  seqHasValidating = True -- Tx in AlonzoEra has an IsValidating field
+instance CC.Crypto c => EraModule.SupportsSegWit (AlonzoEra c) where
+  type TxSeq (AlonzoEra c) = Alonzo.TxSeq (AlonzoEra c)
+  type TxInBlock (AlonzoEra c) = ValidatedTx (AlonzoEra c)
+  fromTxSeq = Alonzo.txSeqTxns
+  toTxSeq = Alonzo.TxSeq
+  hashTxSeq = Alonzo.hashTxSeq
 
 instance API.PraosCrypto c => API.ShelleyBasedEra (AlonzoEra c)
 
@@ -161,27 +217,9 @@ type instance Core.EraRule "UTXO" (AlonzoEra c) = Alonzo.AlonzoUTXO (AlonzoEra c
 
 type instance Core.EraRule "UTXOW" (AlonzoEra c) = Alonzo.AlonzoUTXOW (AlonzoEra c)
 
-type LEDGERSTUB c =
-  STUB
-    (API.LedgerEnv (AlonzoEra c))
-    (API.UTxOState (AlonzoEra c), API.DPState c)
-    (API.Tx (AlonzoEra c))
-    ()
-    Shelley.ShelleyBase
+type instance Core.EraRule "LEDGER" (AlonzoEra c) = Alonzo.AlonzoLEDGER (AlonzoEra c)
 
-instance Typeable c => STS.Embed (LEDGERSTUB c) (API.LEDGERS (AlonzoEra c)) where
-  wrapFailed = error "TODO: implement LEDGER rule"
-
-type instance Core.EraRule "LEDGER" (AlonzoEra c) = LEDGERSTUB c
-
-type instance
-  Core.EraRule "BBODY" (AlonzoEra c) =
-    STUB
-      (Shelley.BbodyEnv (AlonzoEra c))
-      (STS.BbodyState (AlonzoEra c))
-      (API.Block (AlonzoEra c))
-      ()
-      Shelley.ShelleyBase
+type instance Core.EraRule "BBODY" (AlonzoEra c) = Alonzo.AlonzoBBODY (AlonzoEra c)
 
 -- Rules inherited from Shelley
 

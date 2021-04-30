@@ -8,24 +8,9 @@
 module Cardano.Ledger.Alonzo.TxInfo where
 
 -- =============================================
--- Types used in the Alonzo Era, needed to make TxInfo
 
 import Cardano.Crypto.Hash.Class (Hash (UnsafeHash))
 import Cardano.Ledger.Alonzo.Data (Data (..), getPlutusData)
--- ==============================================
--- Import Plutus stuff in the qualified Module P
-
-import qualified Cardano.Ledger.Alonzo.FakePlutus as P
-  ( Address (..),
-    Context (..),
-    Credential (..),
-    DCert (..),
-    ScriptPurpose (..),
-    StakingCredential (..),
-    TxInInfo (..),
-    TxInfo (..),
-    TxOut (..),
-  )
 import Cardano.Ledger.Alonzo.Scripts (CostModel (..), ExUnits (..), Script (..))
 import Cardano.Ledger.Alonzo.Tx
 import Cardano.Ledger.Alonzo.TxBody
@@ -40,6 +25,7 @@ import Cardano.Ledger.Alonzo.TxBody
     wdrls',
   )
 import qualified Cardano.Ledger.Alonzo.TxBody as Alonzo (TxBody (..), TxOut (..))
+import Cardano.Ledger.Alonzo.TxWitness (TxWitness)
 import Cardano.Ledger.Coin (Coin (..))
 import Cardano.Ledger.Core as Core (TxBody, TxOut, Value)
 import qualified Cardano.Ledger.Crypto as CC (Crypto)
@@ -52,18 +38,28 @@ import Cardano.Slotting.Slot (EpochNo (..), SlotNo (..))
 import Control.DeepSeq (deepseq)
 import Data.ByteString as BS (ByteString, length)
 import Data.ByteString.Short as SBS (ShortByteString, fromShort)
-import qualified Data.ByteString.Short as Short (ShortByteString, fromShort)
 import qualified Data.Map as Map
 import Data.Maybe (mapMaybe)
 import qualified Data.Set as Set
 import Data.Typeable (Typeable)
-import qualified Flat as Flat (unflat)
 import GHC.Records (HasField (..))
-import qualified Language.PlutusCore.Evaluation.Machine.ExMemory as P (ExCPU (..), ExMemory (..))
-import qualified Language.PlutusTx as P (Data (..))
-import qualified Language.PlutusTx.IsData.Class as P (IsData (..))
 import qualified Plutus.V1.Ledger.Ada as P (adaSymbol, adaToken)
-import qualified Plutus.V1.Ledger.Api as P (CostModelParameters, ExBudget (..), VerboseMode (..), evaluateScriptRestricting)
+import qualified Plutus.V1.Ledger.Address as P (Address (..))
+import qualified Plutus.V1.Ledger.Api as P
+  ( DCert (..),
+    ExBudget (..),
+    VerboseMode (..),
+    evaluateScriptRestricting,
+    validateScript,
+  )
+import qualified Plutus.V1.Ledger.Contexts as P
+  ( ScriptContext (..),
+    ScriptPurpose (..),
+    TxInInfo (..),
+    TxInfo (..),
+    TxOut (..),
+  )
+import qualified Plutus.V1.Ledger.Credential as P (Credential (..), StakingCredential (..))
 import qualified Plutus.V1.Ledger.Crypto as P (PubKeyHash (..))
 import qualified Plutus.V1.Ledger.Interval as P
   ( Extended (..),
@@ -71,11 +67,14 @@ import qualified Plutus.V1.Ledger.Interval as P
     LowerBound (..),
     UpperBound (..),
   )
-import qualified Plutus.V1.Ledger.Scripts as P (Datum (..), DatumHash (..), Script (..), ValidatorHash (..))
+import qualified Plutus.V1.Ledger.Scripts as P (Datum (..), DatumHash (..), ValidatorHash (..))
 import qualified Plutus.V1.Ledger.Slot as P (SlotRange)
 import qualified Plutus.V1.Ledger.Tx as P (TxOutRef (..))
 import qualified Plutus.V1.Ledger.TxId as P (TxId (..))
 import qualified Plutus.V1.Ledger.Value as P (CurrencySymbol (..), TokenName (..), Value (..), singleton, unionWith)
+import qualified PlutusCore.Evaluation.Machine.ExMemory as P (ExCPU (..), ExMemory (..))
+import qualified PlutusTx as P (Data (..))
+import qualified PlutusTx.IsData.Class as P (IsData (..))
 import Shelley.Spec.Ledger.Address (Addr (..), RewardAcnt (..))
 import Shelley.Spec.Ledger.BaseTypes (StrictMaybe (..))
 import Shelley.Spec.Ledger.Credential (Credential (KeyHashObj, ScriptHashObj), Ptr (..), StakeReference (..))
@@ -125,7 +124,7 @@ transStakeCred (KeyHashObj (KeyHash (UnsafeHash kh))) = (fromShort kh)
 
 transStakeReference :: StakeReference crypto -> Maybe P.StakingCredential
 transStakeReference (StakeRefBase cred) = Just (P.StakingHash (transStakeCred cred))
-transStakeReference (StakeRefPtr (Ptr (SlotNo slot) i1 i2)) = Just (P.StakingPtr slot i1 i2)
+transStakeReference (StakeRefPtr (Ptr (SlotNo slot) i1 i2)) = Just (P.StakingPtr (fromIntegral slot) (fromIntegral i1) (fromIntegral i2))
 transStakeReference StakeRefNull = Nothing
 
 transCred :: Credential keyrole crypto -> P.Credential
@@ -221,7 +220,7 @@ transValue (Mary.Value n mp) = Map.foldlWithKey' accum1 justada mp
             (+)
             ans2
             (P.singleton (transPolicyID sym) (transAssetName tok) quantity)
-    justada = (P.singleton P.adaSymbol P.adaToken n)
+    justada = P.singleton P.adaSymbol P.adaToken n
 
 -- =============================================
 -- translate fileds like DCert, Wdrl, and similar
@@ -238,7 +237,7 @@ transDCert (DCertDeleg (Delegate (Delegation stkcred keyhash))) =
 transDCert (DCertPool (RegPool pp)) =
   P.DCertPoolRegister (transKeyHash (_poolId pp)) (P.PubKeyHash (transHash (_poolVrf pp)))
 transDCert (DCertPool (RetirePool keyhash (EpochNo i))) =
-  P.DCertPoolRetire (transKeyHash keyhash) i
+  P.DCertPoolRetire (transKeyHash keyhash) (fromIntegral i)
 transDCert (DCertGenesis _) = P.DCertGenesis
 transDCert (DCertMir _) = P.DCertMir
 
@@ -252,9 +251,6 @@ getWitVKeyHash = P.PubKeyHash . fromShort . (\(UnsafeHash x) -> x) . (\(KeyHash 
 
 transDataPair :: (DataHash c, Data era) -> (P.DatumHash, P.Datum)
 transDataPair (x, y) = (transDataHash' x, P.Datum (getPlutusData y))
-
-transCostModel :: CostModel -> P.CostModelParameters
-transCostModel (CostModel mp) = Map.foldlWithKey' (\ans bytes n -> Map.insert (show bytes) n ans) Map.empty mp
 
 transExUnits :: ExUnits -> P.ExBudget
 transExUnits (ExUnits mem steps) = P.ExBudget (P.ExCPU (fromIntegral steps)) (P.ExMemory (fromIntegral mem))
@@ -273,14 +269,16 @@ transScriptPurpose (Certifying dcert) = P.Certifying (transDCert dcert)
 -- | Compute a Digest of the current transaction to pass to the script
 --   This is the major component of the valContext function.
 transTx ::
-  forall era.
+  forall era tx.
   ( Era era,
     Core.TxOut era ~ Alonzo.TxOut era,
     Core.TxBody era ~ Alonzo.TxBody era,
-    Value era ~ Mary.Value (Crypto era)
+    Value era ~ Mary.Value (Crypto era),
+    HasField "body" tx (Core.TxBody era),
+    HasField "wits" tx (TxWitness era)
   ) =>
   UTxO era ->
-  Tx era ->
+  tx ->
   P.TxInfo
 transTx utxo tx =
   P.TxInfo
@@ -290,22 +288,20 @@ transTx utxo tx =
       P.txInfoFee = (transValue (inject @(Mary.Value (Crypto era)) fee)),
       P.txInfoForge = (transValue forge),
       P.txInfoDCert = (foldr (\c ans -> transDCert c : ans) [] (certs' tbody)),
-      P.txInfoWdrl = transWdrl (wdrls' tbody),
+      P.txInfoWdrl = Map.toList (transWdrl (wdrls' tbody)),
       P.txInfoValidRange = (transVI interval),
       P.txInfoSignatories = map transKeyHash (Set.toList (reqSignerHashes' tbody)),
       P.txInfoData = (map transDataPair datpairs),
       P.txInfoId = (P.TxId (transSafeHash (hashAnnotated @(Crypto era) tbody)))
     }
   where
-    tbody = body' tx
-    _witnesses = wits' tx
-    _isval = isValidating' tx
-    _auxdat = auxiliaryData' tx
+    tbody = getField @"body" tx
+    _witnesses = getField @"wits" tx
     outs = outputs' tbody
     fee = txfee' tbody
     forge = mint' tbody
     interval = vldt' tbody
-    datpairs = Map.toList (txdats' (wits' tx))
+    datpairs = Map.toList (txdats' _witnesses)
 
 -- ===============================================================
 -- From the specification, Figure 7 "Script Validation, cont."
@@ -319,7 +315,7 @@ valContext ::
   P.TxInfo ->
   ScriptPurpose (Crypto era) ->
   Data era
-valContext txinfo sp = Data (P.toData (P.Context txinfo (transScriptPurpose sp)))
+valContext txinfo sp = Data (P.toData (P.ScriptContext txinfo (transScriptPurpose sp)))
 
 -- The runPLCScript in the Specification has a slightly different type
 -- than the one in the implementation below. Made necessary by the the type
@@ -327,10 +323,10 @@ valContext txinfo sp = Data (P.toData (P.Context txinfo (transScriptPurpose sp))
 
 -- | Run a Plutus Script, given the script and the bounds on resources it is allocated.
 runPLCScript :: CostModel -> SBS.ShortByteString -> ExUnits -> [P.Data] -> Bool
-runPLCScript cost scriptbytestring units ds =
+runPLCScript (CostModel cost) scriptbytestring units ds =
   case P.evaluateScriptRestricting
     P.Quiet
-    (transCostModel cost)
+    cost
     (transExUnits units)
     scriptbytestring
     ds of
@@ -345,17 +341,10 @@ validPlutusdata (P.List ds) = all validPlutusdata ds
 validPlutusdata (P.I _n) = True
 validPlutusdata (P.B bs) = BS.length bs <= 64
 
--- | A ByteString represents a valid P.Script if it can be unflattened
-validPlutusScript :: Short.ShortByteString -> Bool
-validPlutusScript flatBytes =
-  case Flat.unflat (Short.fromShort flatBytes) of
-    Right (_x :: P.Script) -> True
-    Left _err -> False
-
 -- | Test that every Alonzo script represents a real Script.
 --     Run deepseq to see that there are no infinite computations and that
 --     every Plutus Script unflattens into a real P.Script
-validScript :: Era era => Script era -> Bool
-validScript scrip = deepseq scrip $ case scrip of
-  TimelockScript _ -> True
-  PlutusScript bytes -> validPlutusScript bytes
+validScript :: Script era -> Bool
+validScript scrip = case scrip of
+  TimelockScript sc -> deepseq sc True
+  PlutusScript bytes -> P.validateScript bytes

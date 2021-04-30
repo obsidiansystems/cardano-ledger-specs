@@ -29,6 +29,7 @@ import Cardano.Ledger.Era (Era)
 import Cardano.Ledger.SafeHash (SafeHash, extractHash)
 import Cardano.Ledger.Shelley.Constraints (UsesPParams (PParamsDelta))
 import Cardano.Slotting.Slot (WithOrigin (..))
+import Cardano.Slotting.Time (SystemStart (SystemStart))
 import Codec.Binary.Bech32
 import Control.Monad.Identity (Identity)
 import Control.SetAlgebra (forwards)
@@ -45,6 +46,7 @@ import Data.Text (Text)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Natural (Natural)
+import GHC.Records
 import Prettyprinter
 import Prettyprinter.Internal (Doc (Empty))
 import Prettyprinter.Util (putDocW)
@@ -799,17 +801,16 @@ instance PrettyA (Metadata era) where prettyA = ppMetadata
 ppTx ::
   ( PrettyA (Core.TxBody era),
     PrettyA (Core.AuxiliaryData era),
-    PrettyA (Core.Script era),
-    Era era
+    PrettyA (Core.Witnesses era)
   ) =>
   Tx era ->
   PDoc
-ppTx (Tx' body witset meta _) =
+ppTx tx =
   ppRecord
     "Tx"
-    [ ("body", prettyA body),
-      ("witnessSet", ppWitnessSetHKD witset),
-      ("metadata", ppStrictMaybe prettyA meta)
+    [ ("body", prettyA $ getField @"body" tx),
+      ("witnessSet", prettyA $ getField @"wits" tx),
+      ("metadata", ppStrictMaybe prettyA $ getField @"auxiliaryData" tx)
     ]
 
 ppBootstrapWitness :: Crypto crypto => BootstrapWitness crypto -> PDoc
@@ -835,7 +836,7 @@ ppWitnessSetHKD x =
 instance
   ( PrettyA (Core.TxBody era),
     PrettyA (Core.AuxiliaryData era),
-    PrettyA (Core.Script era),
+    PrettyA (Core.Witnesses era),
     Era era
   ) =>
   PrettyA (Tx era)
@@ -1292,25 +1293,43 @@ ppActiveSlotCoeff x =
     ]
 
 ppGlobals :: Globals -> PDoc
-ppGlobals (Globals _e slot stab ran sec maxkes quor maxmaj maxlove active net) =
-  ppRecord
-    "Globals"
-    [ ("epochInfo", text "?"),
-      ("slotsPerKESPeriod", pretty slot),
-      ("stabilityWindow", pretty stab),
-      ("randomnessStabilisationWindow", pretty ran),
-      ("securityParameter", pretty sec),
-      ("maxKESEvo", pretty maxkes),
-      ("quorum", pretty quor),
-      ("maxMajorPV", pretty maxmaj),
-      ("maxLovelaceSupply", pretty maxlove),
-      ("activeSlotCoeff", ppActiveSlotCoeff active),
-      ("networkId", ppNetwork net)
-    ]
+ppGlobals
+  ( Globals
+      _e
+      slot
+      stab
+      ran
+      sec
+      maxkes
+      quor
+      maxmaj
+      maxlove
+      active
+      net
+      start
+    ) =
+    ppRecord
+      "Globals"
+      [ ("epochInfo", text "?"),
+        ("slotsPerKESPeriod", pretty slot),
+        ("stabilityWindow", pretty stab),
+        ("randomnessStabilisationWindow", pretty ran),
+        ("securityParameter", pretty sec),
+        ("maxKESEvo", pretty maxkes),
+        ("quorum", pretty quor),
+        ("maxMajorPV", pretty maxmaj),
+        ("maxLovelaceSupply", pretty maxlove),
+        ("activeSlotCoeff", ppActiveSlotCoeff active),
+        ("networkId", ppNetwork net),
+        ("systemStart", ppSystemStart start)
+      ]
 
 ppNetwork :: Network -> PDoc
 ppNetwork Testnet = text "Testnet"
 ppNetwork Mainnet = text "Mainnet"
+
+ppSystemStart :: SystemStart -> PDoc
+ppSystemStart (SystemStart time) = viaShow time
 
 ppUrl :: Url -> PDoc
 ppUrl x = text (urlToText x)
