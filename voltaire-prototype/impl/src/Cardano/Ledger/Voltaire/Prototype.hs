@@ -17,7 +17,7 @@ import Cardano.Ledger.AuxiliaryData
   )
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Crypto as CryptoClass
-import Cardano.Ledger.Era (BlockDecoding (..), Crypto, Era, ValidateScript (..))
+import Cardano.Ledger.Era (SupportsSegWit (..), Crypto, Era, ValidateScript (..))
 import qualified Cardano.Ledger.Mary.Value as V
 import Cardano.Ledger.SafeHash (hashAnnotated)
 import Cardano.Ledger.Shelley (nativeMultiSigTag)
@@ -45,6 +45,7 @@ import qualified Data.Set as Set
 import Data.Typeable (Typeable)
 import GHC.Records (HasField (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
+import qualified Shelley.Spec.Ledger.BlockChain as Shelley
 import Shelley.Spec.Ledger.Metadata (validMetadatum)
 import qualified Shelley.Spec.Ledger.PParams as Shelley
 import Shelley.Spec.Ledger.Scripts (ScriptHash)
@@ -58,7 +59,7 @@ import qualified Shelley.Spec.Ledger.STS.Rupd as Shelley
 import qualified Shelley.Spec.Ledger.STS.Snap as Shelley
 import qualified Shelley.Spec.Ledger.STS.Tick as Shelley
 import qualified Shelley.Spec.Ledger.STS.Upec as Shelley
-import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet, segwitTx)
+import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet)
 
 data VoltairePrototype = VoltairePrototype_One
 
@@ -148,10 +149,6 @@ type instance
     Shelley.PParams (VoltairePrototypeEra (proto :: VoltairePrototype) c)
 
 type instance
-  Core.Tx (VoltairePrototypeEra (proto :: VoltairePrototype) c) =
-    Tx (VoltairePrototypeEra (proto :: VoltairePrototype) c)
-
-type instance
   Core.Witnesses (VoltairePrototypeEra (proto :: VoltairePrototype) c) =
     WitnessSet (VoltairePrototypeEra (proto :: VoltairePrototype) c)
 
@@ -177,11 +174,13 @@ instance
     Typeable proto,
     VoltaireClass (VoltairePrototypeEra proto c)
   ) =>
-  BlockDecoding (VoltairePrototypeEra proto c)
+  SupportsSegWit (VoltairePrototypeEra proto c)
   where
-  seqTx body wit _isval aux = segwitTx body wit aux
-  seqIsValidating _ = True -- Just as in ShelleyMA, for Voltaire prototypes, all Tx are IsValidating
-  seqHasValidating = False -- But Tx does not have an IsValidating field
+  type TxInBlock (VoltairePrototypeEra proto c) = Tx (VoltairePrototypeEra proto c)
+  type TxSeq (VoltairePrototypeEra proto c) = Shelley.TxSeq (VoltairePrototypeEra proto c)
+  fromTxSeq = Shelley.txSeqTxns
+  toTxSeq = Shelley.TxSeq
+  hashTxSeq = Shelley.bbHash
 
 instance
   ( CryptoClass.Crypto c,

@@ -251,7 +251,7 @@ utxoTransition ::
 utxoTransition = do
   TRC (env@(Shelley.UtxoEnv slot pp stakepools _genDelegs), u, tx) <- judgmentContext
   let Shelley.UTxOState utxo deposits' fees ppup = u
-  let txb = _body tx
+  let txb = getField @"body" tx
 
   inInterval slot (getField @"vldt" txb)
     ?! OutsideValidityIntervalUTxO (getField @"vldt" txb) slot
@@ -332,7 +332,7 @@ utxoTransition = do
   null outputsAttrsTooBig ?! OutputBootAddrAttrsTooBig outputsAttrsTooBig
 
   let maxTxSize_ = fromIntegral (getField @"_maxTxSize" pp)
-      txSize_ = Shelley.txsize tx
+      txSize_ = getField @"txsize" tx
   txSize_ <= maxTxSize_ ?! MaxTxSizeUTxO txSize_ maxTxSize_
 
   let refunded = Shelley.keyRefunds pp txb
