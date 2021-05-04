@@ -81,7 +81,7 @@ import qualified Shelley.Spec.Ledger.UTxO as UTxO
 import qualified Shelley.Spec.Ledger.Tx as Shelley
 import qualified Shelley.Spec.Ledger.TxBody as Shelley
 import Cardano.Ledger.SafeHash (SafeHash)
-
+import Test.QuickCheck
 
 type KeyPair' crypto = (KeyPair 'Payment crypto, KeyPair 'Staking crypto)
 
@@ -138,7 +138,6 @@ deriving instance
   ( C.Crypto crypto
   )
   => Show (TestKeyPair crypto)
-
 
 getKeyPairForImpl
   :: forall m era st proxy.
@@ -207,7 +206,6 @@ getHashKeyVRFFor
   -> m (Hash.Hash (C.HASH (Crypto era)) (Cardano.Crypto.VRF.Class.VerKeyVRF (C.VRF (Crypto era))))
 getHashKeyVRFFor proxy maddr = _tkpVRFHash <$> getKeyPairForImpl proxy maddr
 
-
 instance Default (EraElaboratorState era) where
   def = EraElaboratorState
     { _eesUnusedKeyPairs = 1
@@ -249,7 +247,7 @@ mkTxIn = \case
       (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
       pushWitness myKeys
     pure . maybe Set.empty Set.singleton $ Shelley.TxIn <$> Map.lookup mtxId (_eesTxIds ses) <*> pure idx
-  ModelGensisIn mAddr -> do
+  ModelGenesisIn mAddr -> do
     myAddr <- getAddrFor (Proxy :: Proxy era) mAddr
     (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
     pushWitness myKeys
@@ -279,9 +277,9 @@ popWitnesses _ bodyHash = do
   pure $ flip foldMap witness $ \keyP ->
     Set.singleton $ UTxO.makeWitnessVKey bodyHash keyP
 
-
 newtype ModelTxId = ModelTxId Integer
   deriving (Eq, Ord, Show, Num)
+
 newtype ModelAddress = ModelAddress String
   deriving (Eq, Ord, Show, GHC.IsString)
 
@@ -294,11 +292,14 @@ deriving via Coin instance Group ModelValue
 deriving via Coin instance Abelian ModelValue
 deriving via Coin instance Val.Val ModelValue
 
+instance Arbitrary ModelValue where
+  arbitrary = ModelValue <$> arbitrary
 
 data ModelTxIn
   = ModelTxIn ModelTxId Natural
-  | ModelGensisIn ModelAddress
+  | ModelGenesisIn ModelAddress
   deriving (Eq, Ord, Show)
+
 data ModelTxOut = ModelTxOut ModelAddress ModelValue
   deriving (Eq, Ord, Show)
 
@@ -344,7 +345,6 @@ instance Semigroup ModelBlocksMade where
   ModelBlocksMade x <> ModelBlocksMade y = ModelBlocksMade $ Map.unionWith (+) x y
 instance Monoid ModelBlocksMade where
   mempty = ModelBlocksMade Map.empty
-
 
 data ModelPredicateFailure
   = ModelValueNotConservedUTxO
@@ -580,7 +580,6 @@ elaborateBlocks_ globals = State.runState . Except.runExceptT . traverse_ f
       _ :: BlocksMade (Crypto era) <- lift $ State.state $ elaborateBlocksMade globals blocksMade
       pure ()
 
-
 observeRewards
   :: forall era.
   (HasEraElaboratorState (ElaborateEraModelState era) era)
@@ -611,4 +610,3 @@ deriving instance
 deriving instance
  ( Ord (ApplyTxError era)
  ) => Ord (ApplyBlockTransitionError era)
-

@@ -77,7 +77,7 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
       [ ModelEpoch
         [ ModelBlock 0
           [ (modelTx 1)
-            { _mtxInputs = Set.fromList [ModelGensisIn "alice"]
+            { _mtxInputs = Set.fromList [ModelGenesisIn "alice"]
             , _mtxOutputs =
               [ ModelTxOut "alice" ( 1_000_000_000_000 - ( 1_000_000))
               ]
@@ -124,7 +124,7 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
       ])
     [ModelEpoch [ ModelBlock 1
       [ (modelTx 1)
-        { _mtxInputs = Set.fromList [ModelGensisIn "alice"]
+        { _mtxInputs = Set.fromList [ModelGenesisIn "alice"]
         , _mtxOutputs =
           [ ModelTxOut "bob" 100_000_000
           , ModelTxOut "alice" ( 1_000_000_000 - ( 100_000_000 + 1_000_000))
@@ -140,7 +140,7 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
       ])
     [ModelEpoch [ ModelBlock 1
       [ (modelTx 1)
-        { _mtxInputs = (Set.fromList [ModelGensisIn "alice"])
+        { _mtxInputs = (Set.fromList [ModelGenesisIn "alice"])
         , _mtxOutputs = [ModelTxOut "bob" 100_000_000]
         , _mtxFee = 1_000_000
         }
@@ -152,7 +152,7 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
       ])
     [ModelEpoch [ ModelBlock 1
       [ (modelTx 1)
-        { _mtxInputs = Set.fromList [ModelGensisIn "alice"]
+        { _mtxInputs = Set.fromList [ModelGenesisIn "alice"]
         , _mtxOutputs =
           [ ModelTxOut "bob" 100_000_000
           , ModelTxOut "alice" ( 1_000_000_000 - ( 100_000_000 + 1_000_000))

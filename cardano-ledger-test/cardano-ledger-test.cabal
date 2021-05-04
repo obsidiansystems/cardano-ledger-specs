@@ -35,34 +35,39 @@ library
   import:             base, project-config
   hs-source-dirs:     src
   exposed-modules:
-    Test.Cardano.Ledger.TestableEra,
+    Test.Cardano.Ledger.DependGraph,
+    Test.Cardano.Ledger.Elaborators.Alonzo,
+    Test.Cardano.Ledger.Elaborators.Shelley,
     Test.Cardano.Ledger.ModelChain,
     Test.Cardano.Ledger.ModelChain.Properties,
     Test.Cardano.Ledger.ModelChain.Utils,
-    Test.Cardano.Ledger.Elaborators.Alonzo,
-    Test.Cardano.Ledger.Elaborators.Shelley
+    Test.Cardano.Ledger.TestableEra
 
   build-depends:
-    shelley-spec-ledger,
-    groups,
-    containers,
-    transformers,
+    QuickCheck,
+    cardano-binary,
+    cardano-crypto-class,
+    cardano-ledger-alonzo,
     cardano-ledger-core,
     cardano-ledger-shelley-ma,
     cardano-slotting,
+    containers,
+    data-default-class,
+    fgl,
+    fgl-arbitrary,
+    groups,
+    lens,
+    mtl,
+    nonempty-containers,
+    quickcheck-state-machine,
+    shelley-spec-ledger,
+    shelley-spec-ledger-test,
+    small-steps,
     strict-containers,
     tasty,
-    mtl,
     tasty-quickcheck,
     time,
-    cardano-crypto-class,
-    data-default-class,
-    cardano-binary,
-    lens,
-    shelley-spec-ledger-test,
-    cardano-ledger-alonzo,
-    small-steps
-
+    transformers
 
 benchmark bench
   import:             base, project-config
