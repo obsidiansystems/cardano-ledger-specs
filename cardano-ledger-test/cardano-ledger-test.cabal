@@ -37,6 +37,8 @@ library
   exposed-modules:
     Test.Cardano.Ledger.TestableEra,
     Test.Cardano.Ledger.ModelChain,
+    Test.Cardano.Ledger.ModelChain.Properties,
+    Test.Cardano.Ledger.ModelChain.Utils,
     Test.Cardano.Ledger.Elaborators.Alonzo,
     Test.Cardano.Ledger.Elaborators.Shelley
 

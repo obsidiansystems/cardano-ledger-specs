@@ -1,19 +1,15 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -23,7 +19,6 @@
 module Test.Cardano.Ledger.ModelChain where
 
 import Control.Lens
-import Control.Monad.Except
 import Control.Monad.State (MonadState(..))
 import Data.Default.Class
 import Data.Group
@@ -31,12 +26,8 @@ import Data.Kind (Type)
 import Data.Proxy
 import Data.Semigroup (Max(..))
 import Data.Set (Set)
-import Data.Time.Clock
-import Data.Time.Clock.POSIX
 import Data.Traversable
 import Numeric.Natural
-import Test.Tasty
-import Test.Tasty.QuickCheck
 import qualified Control.Monad.Trans.State as State
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -55,12 +46,10 @@ import Shelley.Spec.Ledger.API.Genesis
 import Shelley.Spec.Ledger.API.Validation
 import Shelley.Spec.Ledger.Address
 import Shelley.Spec.Ledger.BaseTypes
-import Data.List ((\\), nub)
 import Shelley.Spec.Ledger.BlockChain
 import Shelley.Spec.Ledger.Genesis
 import Shelley.Spec.Ledger.Keys
 import Shelley.Spec.Ledger.OCert
-import Shelley.Spec.Ledger.PParams
 import Shelley.Spec.Ledger.STS.EraMapping ()
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import qualified Cardano.Crypto.Hash.Class as CHC
@@ -73,7 +62,6 @@ import qualified Shelley.Spec.Ledger.Tx as Shelley
 import Test.Shelley.Spec.Ledger.Generator.Core (AllIssuerKeys)
 import Test.Shelley.Spec.Ledger.Generator.Core (mkOCert)
 import Test.Shelley.Spec.Ledger.Generator.Core (mkBlock)
-import Test.Shelley.Spec.Ledger.Utils (testGlobals)
 import Test.Shelley.Spec.Ledger.Generator.Constants (defaultConstants)
 import Test.Shelley.Spec.Ledger.Generator.Presets (issuerKeys)
 import Test.Shelley.Spec.Ledger.Generator.ScriptClass (mkKeyPairs)
@@ -81,7 +69,6 @@ import Shelley.Spec.Ledger.API (PraosCrypto)
 import Shelley.Spec.Ledger.Serialization (ToCBORGroup)
 
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
-import Data.Typeable
 
 type KeyPair' crypto = (KeyPair 'Payment crypto, KeyPair 'Staking crypto)
 
@@ -183,184 +170,6 @@ mkTxIn = \case
     myKeys <- getKeyPairFor (Proxy :: Proxy era) mAddr
     pure $ Set.singleton $ initialFundsPseudoTxIn $ toAddr Testnet myKeys
 
-chainModelInteractionWith
-  :: forall era proxy .
-  ( Default (AdditionalGenesisConfig era)
-  , ApplyBlock era
-  , ElaborateEraModel era
-  )
-  => proxy era
-  -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
-  -> Either
-    (ApplyBlockError era)
-    (State (Core.EraRule "TICK" era))
-chainModelInteractionWith _ a b =
-  let
-    sg :: ShelleyGenesis era
-    sg = ShelleyGenesis
-      { sgSystemStart       = (posixSecondsToUTCTime 0)
-      , sgNetworkMagic      = 1 -- genNetworkMagic
-      , sgNetworkId         = Testnet
-      , sgActiveSlotsCoeff  = 1 -- fmap realToFrac genSlotLength
-      , sgSecurityParam     = 1 -- Gen.word64 (Range.linear 1 1000000)
-      , sgEpochLength       = (EpochSize 1) -- genSecurityParam
-      , sgSlotsPerKESPeriod = 1 -- Gen.word64 (Range.linear 1 100000)
-      , sgMaxKESEvolutions  = 1 -- Gen.word64 (Range.linear 1 100000)
-      , sgSlotLength        = (secondsToNominalDiffTime 1) -- genSlotLength
-      , sgUpdateQuorum      = 1 -- Gen.word64 (Range.linear 1 100000)
-      , sgMaxLovelaceSupply = 1 -- Gen.word64 (Range.linear 1 100000)
-      , sgProtocolParams    = emptyPParams -- genPParams
-      , sgGenDelegs         = mempty --  genGenesisDelegationList
-      , sgInitialFunds      = mempty -- genFundsList
-      , sgStaking           = emptyGenesisStaking -- genStaking
-      }
-    (st, blks) = elaborateEraModel sg def testGlobals a b
-  in runApplyBlockData (ApplySTSOpts AssertionsAll ValidateAll) testGlobals st blks
-
-
-testChainModelInteractionWith ::
-  ( Testable prop
-  , Show (State (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "BBODY" era))
-  , ApplyBlock era
-  , ElaborateEraModel era
-  , Default (AdditionalGenesisConfig era)
-  )
-  => proxy era
-  -> (State (Core.EraRule "TICK" era) -> prop)
-  -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
-  -> Property
-testChainModelInteractionWith proxy p a b =
-  case chainModelInteractionWith proxy a b of
-    Right good -> property $! p good
-    Left bad -> counterexample (show bad) False
-
-compareLists :: forall a. (Show a, Eq a) => [a] -> [a] -> Property
-compareLists a b = case nub a \\ nub b of
-  [] -> property True
-  _ -> a === b
-
-testChainModelInteractionRejection
-  :: forall era proxy.
-  ( ApplyBlock era
-  , ElaborateEraModel era
-  , Default (AdditionalGenesisConfig era)
-  )
-  => proxy era
-  -> ModelPredicateFailure -- ApplyBlockTransitionError era
-  -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
-  -> Property
-testChainModelInteractionRejection proxy e a b =
-  case chainModelInteractionWith proxy a b of
-    Left (e', _, _) ->
-      let
-        elaboratedError = toEraPredicateFailure @era e
-      in case (e', elaboratedError) of
-        (ApplyBlockTransitionError_Block (BlockTransitionError te), ApplyBlockTransitionError_Block (BlockTransitionError te')) -> compareLists te te'
-        (ApplyBlockTransitionError_Tick (TickTransitionError te), ApplyBlockTransitionError_Tick (TickTransitionError te')) -> compareLists te te'
-        (te, te') -> te === te'
-
-    Right _ -> counterexample "no error encountered" False
-
-testChainModelInteraction ::
-  ( Show (State (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "BBODY" era))
-  , ElaborateEraModel era
-  , Default (AdditionalGenesisConfig era)
-  )
-  => proxy era
-  -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
-  -> Property
-testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (`seq` True)
-
-
-newTestFw ::
-  forall era proxy.
-  ( ApplyBlock era
-  , ElaborateEraModel era
-  , Default (AdditionalGenesisConfig era)
-  , Show (Signal (Core.EraRule "TICK" era))
-  , Typeable era
-  )
-  => proxy era -> TestTree
-newTestFw proxy = testGroup (show $ typeRep proxy)
-  [ testProperty "noop" $ testChainModelInteraction proxy Map.empty []
-
-  , testProperty "noop-2" $ testChainModelInteraction proxy
-    (Map.fromList
-      [ ("alice", Coin 1_000_000)
-      , ("bob", Coin 1_000_000)
-      ])
-    []
-  , testProperty "xfer" $ testChainModelInteraction proxy
-    (Map.fromList
-      [ ("alice", Coin 1_000_000_000)
-      ])
-    [ ModelBlock 1
-      [ ModelTx
-        { _mtxId = 1
-        , _mtxInputs = Set.fromList [ModelGensisIn "alice"]
-        , _mtxOutputs =
-          [ ModelTxOut "bob" 100_000_000
-          , ModelTxOut "alice" ( 1_000_000_000 - ( 100_000_000 + 1_000_000))
-          ]
-        , _mtxFee = 1_000_000
-        , _mtxWitness = Set.fromList ["alice"]
-        }
-      ]
-    ]
-  , testProperty "unbalanced" $ testChainModelInteractionRejection proxy
-    (ModelValueNotConservedUTxO (Val.inject $ Coin 1_000_000_000) (Val.inject $ Coin 101_000_000))
-    (Map.fromList
-      [ ("alice", Coin 1_000_000_000)
-      ])
-    [ ModelBlock 1
-      [ ModelTx 1
-        (Set.fromList [ModelGensisIn "alice"])
-        [ModelTxOut "bob" 100_000_000]
-        1_000_000
-        (Set.fromList ["alice", "bob"])
-      ]
-    ]
-  , testProperty "xfer-2" $ testChainModelInteraction proxy
-    (Map.fromList
-      [ ("alice", Coin 1_000_000_000)
-      ])
-    [ ModelBlock 1
-      [ ModelTx
-        { _mtxId = 1
-        , _mtxInputs = Set.fromList [ModelGensisIn "alice"]
-        , _mtxOutputs =
-          [ ModelTxOut "bob" 100_000_000
-          , ModelTxOut "alice" ( 1_000_000_000 - ( 100_000_000 + 1_000_000))
-          ]
-        , _mtxFee = 1_000_000
-        , _mtxWitness = Set.fromList ["alice"]
-        }
-      ]
-    , ModelBlock 2
-      [ ModelTx
-        { _mtxId = 2
-        , _mtxInputs = Set.fromList [ModelTxIn 1 1]
-        , _mtxOutputs =
-          [ ModelTxOut "bob" 100_000_000
-          , ModelTxOut "alice" (1_000_000_000 - 2 * ( 100_000_000 + 1_000_000))
-          ]
-        , _mtxFee = 1_000_000
-        , _mtxWitness = Set.fromList ["alice"]
-        }
-      ]
-    ]
-  ]
-
-
-
 
 newtype ModelTxId = ModelTxId Integer
   deriving (Eq, Ord, Show, Num)
@@ -407,7 +216,7 @@ data ModelPredicateFailure
       -- ^ the Coin produced by this transaction
 
 
-class (ApplyBlock era) => ElaborateEraModel era where
+class ElaborateEraModel era where
   type ElaborateEraModelState era :: Type
   type ElaborateEraModelState era = EraElaboratorState era
 
@@ -426,6 +235,7 @@ class (ApplyBlock era) => ElaborateEraModel era where
        , HasEraElaboratorState (ElaborateEraModelState era) era
        , C.Crypto (Crypto era)
        , CanStartFromGenesis era
+       , ApplyBlock era
        )
     => ShelleyGenesis era
     -> AdditionalGenesisConfig era
@@ -561,34 +371,4 @@ type ApplyBlockError era =
   , ApplyBlockData era
   )
 
--- fold over a list of tick and block actions into a ledger state.
-runApplyBlockData
-  :: forall era. ApplyBlock era
-  => ApplySTSOpts
-  -> Globals
-  -> State (Core.EraRule "TICK" era)
-  -> [ApplyBlockData era]
-  -> Either (ApplyBlockError era) (State (Core.EraRule "TICK" era))
-runApplyBlockData opts globals = go
-  where
-    loop
-      :: ([a] -> (ApplyBlockTransitionError era))
-      -> ApplyBlockData era
-      -> [ApplyBlockData era]
-      -> (NewEpochState era, [[a]])
-      -> (Either (ApplyBlockError era) (NewEpochState era))
-    loop _ _ xs (good, []) = go good xs
-    loop c x _ (st, bad) = Left . (,st,x) . c $ join bad
-    {-# INLINE loop #-}
-
-    go
-      :: NewEpochState era
-      -> [ApplyBlockData era]
-      -> (Either (ApplyBlockError era) (NewEpochState era))
-    go st [] = Right $! st
-    go st0 (x:xs) = case x of
-      ApplyTick tick -> applyTickOpts opts globals st0 tick
-        & loop (ApplyBlockTransitionError_Tick . TickTransitionError) x xs
-      ApplyBlock blk -> applyBlockOpts opts globals st0 blk
-        & loop (ApplyBlockTransitionError_Block . BlockTransitionError) x xs
 
