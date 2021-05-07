@@ -10,6 +10,10 @@ module Test.Cardano.Ledger.Elaborators.Alonzo where
 
 import Cardano.Crypto.Util (SignableRepresentation)
 import Cardano.Ledger.Alonzo (AlonzoEra)
+import Cardano.Ledger.Alonzo.Rules.Utxo
+import Cardano.Ledger.Alonzo.Rules.Utxow
+import Cardano.Ledger.Alonzo.Scripts (Prices(..), ExUnits(..), CostModel(..))
+import Cardano.Ledger.Alonzo.Translation (AlonzoGenesis(..))
 import Cardano.Ledger.Alonzo.TxBody as Alonzo (TxOut (..))
 import Cardano.Ledger.Coin
 import Cardano.Ledger.Crypto (KES, DSIGN)
@@ -19,17 +23,19 @@ import Cardano.Ledger.ShelleyMA.Timelocks (ValidityInterval(..))
 import Cardano.Slotting.Slot
 import Control.Lens
 import Control.Monad.State (MonadState(..))
+import Data.Default.Class
 import Data.Foldable
 import Data.Maybe.Strict (StrictMaybe(..))
 import Data.Proxy
 import Data.Traversable
 import Shelley.Spec.Ledger.API (ShelleyBasedEra)
+import Shelley.Spec.Ledger.API.Mempool (ApplyTxError(..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
-import Shelley.Spec.Ledger.API.Validation (BlockTransitionError(..))
-import Test.Cardano.Ledger.ModelChain
-import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo (Script)
+import Shelley.Spec.Ledger.STS.Ledger
+import Shelley.Spec.Ledger.STS.Utxow
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import qualified Cardano.Crypto.KES.Class as KES
+import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo (Script)
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import qualified Cardano.Ledger.Core as Core
@@ -41,17 +47,8 @@ import qualified Data.Set as Set
 import qualified Shelley.Spec.Ledger.Tx as Shelley (TxIn(..))
 import qualified Shelley.Spec.Ledger.TxBody as Shelley (Wdrl(..))
 import qualified Shelley.Spec.Ledger.UTxO as UTxO
-import Cardano.Ledger.Alonzo.Translation (AlonzoGenesis(..))
-import Data.Default.Class
-import Cardano.Ledger.Alonzo.Scripts (Prices(..), ExUnits(..), CostModel(..))
 
-import Cardano.Ledger.Alonzo.Rules.Utxo
-import Cardano.Ledger.Alonzo.Rules.Bbody
-import Shelley.Spec.Ledger.STS.Bbody
-import Shelley.Spec.Ledger.STS.Ledgers
-import Shelley.Spec.Ledger.STS.Ledger
-import Cardano.Ledger.Alonzo.Rules.Utxow
-import Shelley.Spec.Ledger.STS.Utxow
+import Test.Cardano.Ledger.ModelChain
 
 instance Default AlonzoGenesis where
   def = AlonzoGenesis
@@ -72,12 +69,10 @@ instance
   makeTx _ _ = \ttl mtx -> State.runState (mkAlonzoTx ttl mtx)
 
   toEraPredicateFailure = \case
-    ModelValueNotConservedUTxO x y ->
-      ApplyBlockTransitionError_Block
-        (BlockTransitionError
-          [ShelleyInAlonzoPredFail (LedgersFailure (LedgerFailure (UtxowFailure (WrappedShelleyEraFailure
-            (UtxoFailure (ValueNotConservedUTxO (Val.inject $ Coin $ unModelValue x) (Val.inject $ Coin $ unModelValue y)))
-            ))))])
+    ModelValueNotConservedUTxO x y -> ApplyBlockTransitionError_Tx $ ApplyTxError
+      [UtxowFailure (WrappedShelleyEraFailure
+        (UtxoFailure (ValueNotConservedUTxO (Val.inject $ Coin $ unModelValue x) (Val.inject $ Coin $ unModelValue y)))
+        )]
 
 
 mkAlonzoTx

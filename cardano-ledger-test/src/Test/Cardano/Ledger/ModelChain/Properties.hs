@@ -27,7 +27,9 @@ newTestFw ::
   ( ApplyBlock era
   , ElaborateEraModel era
   , Default (AdditionalGenesisConfig era)
-  , Show (Signal (Core.EraRule "TICK" era))
+  , Default (ElaborateEraModelState era)
+  , Eq (PredicateFailure (Core.EraRule "LEDGER" era))
+  , Show (PredicateFailure (Core.EraRule "LEDGER" era))
   , Typeable era
   )
   => proxy era -> TestTree

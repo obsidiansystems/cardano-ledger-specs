@@ -8,40 +8,39 @@
 
 module Test.Cardano.Ledger.Elaborators.Shelley where
 
+import Cardano.Crypto.Util (SignableRepresentation)
 import Cardano.Ledger.Coin
-import Data.Maybe.Strict (StrictMaybe(..))
+import Cardano.Ledger.Crypto (KES, DSIGN)
+import Cardano.Ledger.Era (Era (Crypto))
+import Cardano.Ledger.SafeHash (hashAnnotated)
+import Cardano.Ledger.Shelley (ShelleyEra)
+import Cardano.Slotting.Slot
+import Control.Lens
+import Control.Monad.State (MonadState(..))
 import Data.Foldable
+import Data.Maybe.Strict (StrictMaybe(..))
+import Data.Proxy
 import Data.Traversable
+import Shelley.Spec.Ledger.API (ShelleyBasedEra)
+import Shelley.Spec.Ledger.API.Mempool (ApplyTxError(..))
+import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
+import Shelley.Spec.Ledger.STS.EraMapping ()
+import Shelley.Spec.Ledger.STS.Ledger (LedgerPredicateFailure (..))
 import Shelley.Spec.Ledger.STS.Utxo (UtxoPredicateFailure (..))
 import Shelley.Spec.Ledger.STS.Utxow (UtxowPredicateFailure(..))
-import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
-import Shelley.Spec.Ledger.API.Validation
-import Shelley.Spec.Ledger.STS.Bbody (BbodyPredicateFailure (..))
-import Shelley.Spec.Ledger.STS.EraMapping ()
-import Control.Lens
-import Shelley.Spec.Ledger.STS.Ledger (LedgerPredicateFailure (..))
-import Shelley.Spec.Ledger.STS.Ledgers (LedgersPredicateFailure (..))
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import qualified Cardano.Crypto.KES.Class as KES
+import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Val as Val
-import Cardano.Ledger.Shelley (ShelleyEra)
-import Cardano.Crypto.Util (SignableRepresentation)
-import Cardano.Ledger.Crypto (KES, DSIGN)
 import qualified Control.Monad.Trans.State as State
-import Cardano.Ledger.SafeHash (hashAnnotated)
-import Test.Cardano.Ledger.ModelChain
-import qualified Shelley.Spec.Ledger.UTxO as UTxO
+import qualified Data.Map as Map
+import qualified Data.Sequence.Strict as StrictSeq
+import qualified Data.Set as Set
 import qualified Shelley.Spec.Ledger.Tx as Shelley
 import qualified Shelley.Spec.Ledger.TxBody as Shelley
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import Data.Proxy
-import qualified Data.Sequence.Strict as StrictSeq
-import Cardano.Slotting.Slot
-import Shelley.Spec.Ledger.API (ShelleyBasedEra)
-import Control.Monad.State (MonadState(..))
-import qualified Cardano.Ledger.Core as Core
-import Cardano.Ledger.Era (Era (Crypto))
+import qualified Shelley.Spec.Ledger.UTxO as UTxO
+
+import Test.Cardano.Ledger.ModelChain
 
 instance
     ( PraosCrypto crypto
@@ -52,8 +51,8 @@ instance
   makeTx _ _ = \ttl mtx -> State.runState (mkShelleyTx ttl mtx)
 
   toEraPredicateFailure = \case
-    ModelValueNotConservedUTxO x y ->
-      ApplyBlockTransitionError_Block (BlockTransitionError [LedgersFailure (LedgerFailure (UtxowFailure (UtxoFailure (ValueNotConservedUTxO (Val.inject $ Coin $ unModelValue x) (Val.inject $ Coin $ unModelValue y)))))])
+    ModelValueNotConservedUTxO x y -> ApplyBlockTransitionError_Tx $ ApplyTxError
+      [UtxowFailure (UtxoFailure (ValueNotConservedUTxO (Val.inject $ Coin $ unModelValue x) (Val.inject $ Coin $ unModelValue y)))]
 
 mkShelleyTx
   :: forall m era st.

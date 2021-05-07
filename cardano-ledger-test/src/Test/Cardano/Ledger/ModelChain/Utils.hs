@@ -8,11 +8,10 @@
 module Test.Cardano.Ledger.ModelChain.Utils where
 
 import Cardano.Ledger.Coin
+import Data.Bifunctor
 import Cardano.Slotting.Slot (EpochSize(..))
-import Control.Monad
 import Control.State.Transition.Extended
 import Data.Default.Class
-import Data.Function ((&))
 import Data.List ((\\), nub)
 import Data.Time.Clock (secondsToNominalDiffTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
@@ -27,19 +26,22 @@ import Test.Shelley.Spec.Ledger.Utils (testGlobals)
 import Test.Tasty.QuickCheck
 import qualified Cardano.Ledger.Core as Core
 import qualified Data.Map as Map
+import Shelley.Spec.Ledger.API.Mempool (ApplyTxError(..))
 
+type ApplyBlockError era = (ApplyBlockTransitionError era)
 
 chainModelInteractionWith
   :: forall era proxy .
   ( Default (AdditionalGenesisConfig era)
+  , Default (ElaborateEraModelState era)
   , ElaborateEraModel era
-  , ApplyBlock era
+  -- , ApplyBlock era
   )
   => proxy era
   -> Map.Map ModelAddress Coin
   -> [ModelBlock]
   -> Either (ApplyBlockError era) (NewEpochState era)
-chainModelInteractionWith _ a b =
+chainModelInteractionWith _ genesisAccounts modelBlocks =
   let
     -- TODO, pass this in as a generator.
     sg :: ShelleyGenesis era
@@ -60,37 +62,18 @@ chainModelInteractionWith _ a b =
       , sgInitialFunds      = mempty -- genFundsList
       , sgStaking           = emptyGenesisStaking -- genStaking
       }
-    (st0, blks) = elaborateEraModel sg def testGlobals a b
 
-    -- fold over a list of tick and block actions into a ledger state.
-    runApplyBlockData opts globals = go
-      where
-        loop
-          :: forall a. ([a] -> (ApplyBlockTransitionError era))
-          -> ApplyBlockData era
-          -> [ApplyBlockData era]
-          -> (NewEpochState era, [[a]])
-          -> (Either (ApplyBlockError era) (NewEpochState era))
-        loop _ _ xs (good, []) = go good xs
-        loop c x _ (st, bad) = Left . (,st,x) . c $ join bad
-        {-# INLINE loop #-}
-
-        go st [] = Right $! st
-        go st (x:xs) = case x of
-          ApplyTick tick -> applyTickOpts opts globals st tick
-            & loop (ApplyBlockTransitionError_Tick . TickTransitionError) x xs
-          ApplyBlock blk -> applyBlockOpts opts globals st blk
-            & loop (ApplyBlockTransitionError_Block . BlockTransitionError) x xs
-  in runApplyBlockData (ApplySTSOpts AssertionsAll ValidateAll) testGlobals st0 blks
+    elabState = elaborateInitialState sg def genesisAccounts def
+    (x, (y, _)) = elaborateBlocks_ testGlobals modelBlocks elabState
+  in bimap ApplyBlockTransitionError_Tx (\() -> y) x
 
 
 testChainModelInteractionWith ::
   ( Testable prop
-  , Show (State (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "BBODY" era))
   , ElaborateEraModel era, ApplyBlock era
   , Default (AdditionalGenesisConfig era)
+  , Show (PredicateFailure (Core.EraRule "LEDGER" era))
+  , Default (ElaborateEraModelState era)
   )
   => proxy era
   -> (State (Core.EraRule "TICK" era) -> prop)
@@ -109,33 +92,35 @@ compareLists a b = case nub a \\ nub b of
 
 testChainModelInteractionRejection
   :: forall era proxy.
-  ( ApplyBlock era
-  , ElaborateEraModel era
+  ( ElaborateEraModel era
   , Default (AdditionalGenesisConfig era)
+  , Eq (PredicateFailure (Core.EraRule "LEDGER" era))
+  , Show (PredicateFailure (Core.EraRule "LEDGER" era ))
+  , Default (ElaborateEraModelState era)
   )
   => proxy era
-  -> ModelPredicateFailure -- ApplyBlockTransitionError era
+  -> ModelPredicateFailure
   -> Map.Map ModelAddress Coin
   -> [ModelBlock]
   -> Property
 testChainModelInteractionRejection proxy e a b =
   case chainModelInteractionWith proxy a b of
-    Left (e', _, _) ->
+    Left e' ->
       let
         elaboratedError = toEraPredicateFailure @era e
       in case (e', elaboratedError) of
-        (ApplyBlockTransitionError_Block (BlockTransitionError te), ApplyBlockTransitionError_Block (BlockTransitionError te')) -> compareLists te te'
-        (ApplyBlockTransitionError_Tick (TickTransitionError te), ApplyBlockTransitionError_Tick (TickTransitionError te')) -> compareLists te te'
-        (te, te') -> te === te'
+        (ApplyBlockTransitionError_Tx (ApplyTxError te), ApplyBlockTransitionError_Tx (ApplyTxError te')) ->
+          compareLists te te'
+        -- fallthrough if/when more error types are added
+        -- (te, te') -> te === te'
 
     Right _ -> counterexample "no error encountered" False
 
 testChainModelInteraction ::
-  ( Show (State (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "TICK" era))
-  , Show (Signal (Core.EraRule "BBODY" era))
+  ( Show (PredicateFailure (Core.EraRule "LEDGER" era))
   , ElaborateEraModel era, ApplyBlock era
   , Default (AdditionalGenesisConfig era)
+  , Default (ElaborateEraModelState era)
   )
   => proxy era
   -> Map.Map ModelAddress Coin

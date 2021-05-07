@@ -4,7 +4,7 @@ import Cardano.Ledger.Alonzo (AlonzoEra)
 import Data.Proxy
 import Test.Cardano.Ledger.Elaborators.Shelley ()
 import Test.Cardano.Ledger.Elaborators.Alonzo ()
-import Test.Cardano.Ledger.ModelChain (newTestFw)
+import Test.Cardano.Ledger.ModelChain.Properties (newTestFw)
 import Test.Shelley.Spec.Ledger.ConcreteCryptoTypes (C_Crypto)
 import Test.Tasty (TestTree, testGroup, defaultMain)
 
