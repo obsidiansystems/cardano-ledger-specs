@@ -77,7 +77,6 @@ import Data.Ratio ((%))
 import Data.Sequence.Strict (StrictSeq)
 import qualified Data.Sequence.Strict as StrictSeq
 import Data.Set (Set)
-import Data.Tuple (swap)
 import Data.Word (Word64)
 import GHC.Records (HasField, getField)
 import Numeric.Natural (Natural)
@@ -190,6 +189,7 @@ import Test.Shelley.Spec.Ledger.Generator.ScriptClass
     exponential,
     mkPayScriptHashMap,
     mkStakeScriptHashMap,
+    mkKeyPairs
   )
 import Test.Shelley.Spec.Ledger.Orphans ()
 import Test.Shelley.Spec.Ledger.Utils
@@ -205,6 +205,7 @@ import Test.Shelley.Spec.Ledger.Utils
     runShelleyBase,
     unsafeMkUnitInterval,
   )
+import Shelley.Spec.Ledger.Serialization (ToCBORGroup)
 
 -- ==================================================
 
@@ -315,17 +316,6 @@ genWord64 :: Word64 -> Word64 -> Gen Word64
 genWord64 lower upper =
   fromIntegral
     <$> genNatural (fromIntegral lower) (fromIntegral upper)
-
-mkKeyPairs ::
-  (DSIGNAlgorithm (DSIGN crypto)) =>
-  Word64 ->
-  (KeyPair kr crypto, KeyPair kr' crypto)
-mkKeyPairs n =
-  (mkKeyPair_ (2 * n), mkKeyPair_ (2 * n + 1))
-  where
-    mkKeyPair_ n_ =
-      (uncurry KeyPair . swap)
-        (mkKeyPair (n_, n_, n_, n_, n_))
 
 -- | Generate a mapping from genesis delegate cold key hash to the issuer keys.
 -- Note: we index all possible genesis delegate keys, that is,
@@ -529,8 +519,8 @@ mkBlockHeader prev pkeys s blockNo enonce kesPeriod c0 oCert bodySize bodyHash =
 
 mkBlock ::
   forall era r.
-  ( UsesTxBody era,
-    PreAlonzo era,
+  ( Era era,
+    ToCBORGroup (Era.TxSeq era),
     Mock (Crypto era)
   ) =>
   -- | Hash of previous block
@@ -538,7 +528,7 @@ mkBlock ::
   -- | All keys in the stake pool
   AllIssuerKeys (Crypto era) r ->
   -- | Transactions to record
-  [Tx era] ->
+  [Era.TxInBlock era] ->
   -- | Current slot
   SlotNo ->
   -- | Block number/chain length/chain "difficulty"
@@ -553,10 +543,12 @@ mkBlock ::
   OCert (Crypto era) ->
   Block era
 mkBlock prev pkeys txns s blockNo enonce kesPeriod c0 oCert =
-  let bodySize = fromIntegral $ bBodySize $ (TxSeq @era . StrictSeq.fromList) txns
-      bodyHash = bbHash $ TxSeq @era $ StrictSeq.fromList txns
+  let txns' :: Era.TxSeq era
+      txns' = Era.toTxSeq @era $ StrictSeq.fromList txns
+      bodySize = fromIntegral $ bBodySize txns'
+      bodyHash = Era.hashTxSeq @era txns'
       bh = mkBlockHeader prev pkeys s blockNo enonce kesPeriod c0 oCert bodySize bodyHash
-   in Block bh (TxSeq @era $ StrictSeq.fromList txns)
+   in Block bh txns'
 
 -- | Create a block with a faked VRF result.
 mkBlockFakeVRF ::

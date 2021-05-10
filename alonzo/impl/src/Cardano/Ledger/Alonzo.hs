@@ -163,15 +163,6 @@ instance (CC.Crypto c) => Shelley.ValidateScript (AlonzoEra c) where
 -- To run any Alonzo Script use Cardano.Ledger.Alonzo.PlutusScriptApi(evalScripts)
 -- hashScript x = ...  We use the default method for hashScript
 
-instance
-  ( CC.Crypto c
-  ) =>
-  API.CanStartFromGenesis (AlonzoEra c)
-  where
-  -- type AdditionalGenesisConfig era = ()
-  -- initialState :: ShelleyGenesis era -> AdditionalGenesisConfig era -> NewEpochState era
-  initialState _ _ = error "TODO: implement initialState"
-
 instance (CC.Crypto c) => UsesTxOut (AlonzoEra c) where
   makeTxOut _proxy addr val = TxOut addr val Shelley.SNothing
 
@@ -215,8 +206,6 @@ instance CC.Crypto c => EraModule.SupportsSegWit (AlonzoEra c) where
   toTxSeq = Alonzo.TxSeq
   hashTxSeq = Alonzo.hashTxSeq
   numSegComponents = 4
-
-instance API.PraosCrypto c => API.ShelleyBasedEra (AlonzoEra c)
 
 -------------------------------------------------------------------------------
 -- Era Mapping

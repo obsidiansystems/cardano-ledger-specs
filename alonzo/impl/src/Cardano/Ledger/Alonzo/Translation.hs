@@ -5,6 +5,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cardano.Ledger.Alonzo.Translation where
@@ -47,6 +49,13 @@ import Shelley.Spec.Ledger.API
 import qualified Shelley.Spec.Ledger.API as API
 import qualified Shelley.Spec.Ledger.PParams as Shelley
 import qualified Shelley.Spec.Ledger.TxBody as Shelley
+
+import qualified Data.Map.Strict as Map
+import Cardano.Ledger.Val
+import Cardano.Ledger.Coin
+import Data.Default.Class
+import Shelley.Spec.Ledger.EpochBoundary (BlocksMade(..), emptySnapShots)
+import qualified Cardano.Ledger.Crypto as CC
 
 --------------------------------------------------------------------------------
 -- Translation from Mary to Alonzo
@@ -206,7 +215,7 @@ translateTxOut (Shelley.TxOutCompact addr value) =
   TxOutCompact addr value SNothing
 
 translatePParams ::
-  AlonzoGenesis -> Shelley.PParams (MaryEra c) -> PParams (AlonzoEra c)
+  AlonzoGenesis -> Shelley.PParams maryEra -> PParams alonzoEra
 translatePParams ctx pp =
   PParams
     { _minfeeA = API._minfeeA pp,
@@ -262,3 +271,46 @@ translatePParamsUpdate pp =
       _maxBlockExUnits = SNothing,
       _maxValSize = SNothing
     }
+
+instance forall c.
+  ( CC.Crypto c
+  ) =>
+  API.CanStartFromGenesis (AlonzoEra c)
+  where
+  type AdditionalGenesisConfig (AlonzoEra c) = AlonzoGenesis
+  -- initialState :: ShelleyGenesis era -> AdditionalGenesisConfig era -> NewEpochState era
+  initialState sg ctx =
+    API.NewEpochState
+      initialEpochNo
+      (BlocksMade Map.empty)
+      (BlocksMade Map.empty)
+      ( API.EpochState
+          (API.AccountState (Coin 0) reserves)
+          emptySnapShots
+          ( API.LedgerState
+              ( API.UTxOState
+                  initialUtxo
+                  (Coin 0)
+                  (Coin 0)
+                  def
+              )
+              (API.DPState (def {API._genDelegs = API.GenDelegs genDelegs}) def)
+          )
+          pp
+          pp
+          def
+      )
+      SNothing
+      (API.PoolDistr Map.empty)
+    where
+      initialEpochNo = 0
+      initialUtxo = API.genesisUTxO sg
+      reserves =
+        coin $
+          inject (word64ToCoin (API.sgMaxLovelaceSupply sg))
+            <-> API.balance initialUtxo
+      genDelegs = API.sgGenDelegs sg
+      pp = translatePParams ctx $ API.sgProtocolParams sg
+
+instance API.PraosCrypto c => API.ShelleyBasedEra (AlonzoEra c)
+
