@@ -26,6 +26,7 @@ import Test.Shelley.Spec.Ledger.Utils (testGlobals)
 import Test.Tasty.QuickCheck
 import qualified Cardano.Ledger.Core as Core
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Shelley.Spec.Ledger.API.Mempool (ApplyTxError(..))
 
 type ApplyBlockError era = (ApplyBlockTransitionError era)
@@ -35,11 +36,10 @@ chainModelInteractionWith
   ( Default (AdditionalGenesisConfig era)
   , Default (ElaborateEraModelState era)
   , ElaborateEraModel era
-  -- , ApplyBlock era
   )
   => proxy era
   -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
+  -> [ModelChainInteraction]
   -> Either (ApplyBlockError era) (NewEpochState era)
 chainModelInteractionWith _ genesisAccounts modelBlocks =
   let
@@ -78,7 +78,7 @@ testChainModelInteractionWith ::
   => proxy era
   -> (State (Core.EraRule "TICK" era) -> prop)
   -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
+  -> [ModelChainInteraction]
   -> Property
 testChainModelInteractionWith proxy p a b =
   case chainModelInteractionWith proxy a b of
@@ -101,7 +101,7 @@ testChainModelInteractionRejection
   => proxy era
   -> ModelPredicateFailure
   -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
+  -> [ModelChainInteraction]
   -> Property
 testChainModelInteractionRejection proxy e a b =
   case chainModelInteractionWith proxy a b of
@@ -124,8 +124,19 @@ testChainModelInteraction ::
   )
   => proxy era
   -> Map.Map ModelAddress Coin
-  -> [ModelBlock]
+  -> [ModelChainInteraction]
   -> Property
 testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (`seq` True)
 
 
+-- | helper to produce a "blank" ModelTx with most fields set to a reasonable
+-- "default"
+modelTx :: ModelTxId -> ModelTx
+modelTx txId = ModelTx
+  { _mtxId = txId
+  , _mtxInputs = Set.empty
+  , _mtxOutputs = []
+  , _mtxFee = 0
+  , _mtxWitness = Set.empty
+  , _mtxDCert =  []
+  }

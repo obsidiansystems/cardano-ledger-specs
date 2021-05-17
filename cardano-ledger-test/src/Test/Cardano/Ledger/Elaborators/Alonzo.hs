@@ -75,6 +75,7 @@ instance
         )]
 
 
+
 mkAlonzoTx
   :: forall m era st.
   ( MonadState st m
@@ -83,22 +84,25 @@ mkAlonzoTx
   , Core.TxOut era ~ Alonzo.TxOut era
   , ShelleyBasedEra era
   , Core.Script era ~ Alonzo.Script era
+  , st ~ ElaborateEraModelState era
+  , ElaborateEraModel era
   )
   => SlotNo
   -> ModelTx
   -> m (Alonzo.ValidatedTx era)
-mkAlonzoTx maxTTL mtx@(ModelTx {}) = do
-  outs <- traverse mkTxOut $ _mtxOutputs mtx
+mkAlonzoTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxWitness mtxDCert) = do
+  outs <- traverse mkTxOut mtxOutputs
 
-  ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList $ _mtxInputs mtx
+  ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList mtxInputs
+  dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
   let
     realTxBody = Alonzo.TxBody
       { Alonzo.inputs = ins
       , Alonzo.txinputs_fee = ins
       , Alonzo.outputs = StrictSeq.fromList outs
-      , Alonzo.txcerts = StrictSeq.empty
+      , Alonzo.txcerts = StrictSeq.fromList dcerts
       , Alonzo.txwdrls = Shelley.Wdrl Map.empty
-      , Alonzo.txfee = Coin . unModelValue $ _mtxFee mtx
+      , Alonzo.txfee = Coin . unModelValue $ mtxFee
       , Alonzo.txvldt = ValidityInterval SNothing $ SJust (1+maxTTL)
       , Alonzo.txUpdates = SNothing
       , Alonzo.reqSignerHashes = Set.empty
@@ -109,12 +113,12 @@ mkAlonzoTx maxTTL mtx@(ModelTx {}) = do
       }
     bodyHash = hashAnnotated realTxBody
 
-  wits <- fmap fold $ for (toList $ _mtxWitness mtx) $ \mAddr -> do
+  wits <- fmap fold $ for (toList mtxWitness) $ \mAddr -> do
     (keyP, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
     let wit = UTxO.makeWitnessVKey bodyHash keyP
     pure $ Set.singleton wit
 
-  eraElaboratorState . txIds %= Map.insert (_mtxId mtx) (UTxO.txid @era realTxBody)
+  eraElaboratorState . eesTxIds %= Map.insert mtxId (UTxO.txid @era realTxBody)
   let
     witSet = Alonzo.TxWitness
       { Alonzo.txwitsVKey = wits

@@ -62,32 +62,35 @@ mkShelleyTx
   , Core.TxOut era ~ Shelley.TxOut era
   , ShelleyBasedEra era
   , Core.Witnesses era ~ Shelley.WitnessSet era
+  , st ~ ElaborateEraModelState era
+  , ElaborateEraModel era
   )
   => SlotNo
   -> ModelTx
   -> m (Shelley.Tx era)
-mkShelleyTx maxTTL mtx@(ModelTx {}) = do
-  outs <- traverse mkTxOut $ _mtxOutputs mtx
+mkShelleyTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxWitness mtxDCert) = do
+  outs <- traverse mkTxOut $ mtxOutputs
 
-  ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList $ _mtxInputs mtx
+  ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList $ mtxInputs
+  dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
   let
     realTxBody = Shelley.TxBody
       { Shelley._inputs = ins
       , Shelley._outputs = StrictSeq.fromList outs
-      , Shelley._certs = StrictSeq.empty
+      , Shelley._certs = StrictSeq.fromList dcerts
       , Shelley._wdrls = Shelley.Wdrl Map.empty
-      , Shelley._txfee = Coin . unModelValue $ _mtxFee mtx
+      , Shelley._txfee = Coin . unModelValue $ mtxFee
       , Shelley._ttl = maxTTL
       , Shelley._txUpdate = SNothing
       , Shelley._mdHash = SNothing
       }
     bodyHash = hashAnnotated realTxBody
-  wits :: Core.Witnesses era <- fmap fold $ for (toList $ _mtxWitness mtx) $ \mAddr -> do
+  wits :: Core.Witnesses era <- fmap fold $ for (toList mtxWitness) $ \mAddr -> do
     (keyP, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
     let wit = UTxO.makeWitnessVKey bodyHash keyP
     pure $ mempty {Shelley.addrWits = Set.singleton wit}
 
-  eraElaboratorState . txIds %= Map.insert (_mtxId mtx) (UTxO.txid @era realTxBody)
+  eraElaboratorState . eesTxIds %= Map.insert mtxId (UTxO.txid @era realTxBody)
   pure (Shelley.Tx realTxBody wits SNothing)
 
 

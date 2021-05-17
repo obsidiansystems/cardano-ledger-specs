@@ -41,15 +41,14 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
       [ ("alice", Coin 1_000_000)
       , ("bob", Coin 1_000_000)
       ])
-    []
+    [ModelEpoch [] mempty]
   , testProperty "xfer" $ testChainModelInteraction proxy
     (Map.fromList
       [ ("alice", Coin 1_000_000_000)
       ])
-    [ ModelBlock 1
-      [ ModelTx
-        { _mtxId = 1
-        , _mtxInputs = Set.fromList [ModelGensisIn "alice"]
+    [ModelEpoch [ ModelBlock 1
+      [ (modelTx 1)
+        { _mtxInputs = Set.fromList [ModelGensisIn "alice"]
         , _mtxOutputs =
           [ ModelTxOut "bob" 100_000_000
           , ModelTxOut "alice" ( 1_000_000_000 - ( 100_000_000 + 1_000_000))
@@ -58,28 +57,28 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
         , _mtxWitness = Set.fromList ["alice"]
         }
       ]
-    ]
+    ] mempty]
   , testProperty "unbalanced" $ testChainModelInteractionRejection proxy
     (ModelValueNotConservedUTxO (Val.inject $ Coin 1_000_000_000) (Val.inject $ Coin 101_000_000))
     (Map.fromList
       [ ("alice", Coin 1_000_000_000)
       ])
-    [ ModelBlock 1
-      [ ModelTx 1
-        (Set.fromList [ModelGensisIn "alice"])
-        [ModelTxOut "bob" 100_000_000]
-        1_000_000
-        (Set.fromList ["alice", "bob"])
+    [ModelEpoch [ ModelBlock 1
+      [ (modelTx 1)
+        { _mtxInputs = (Set.fromList [ModelGensisIn "alice"])
+        , _mtxOutputs = [ModelTxOut "bob" 100_000_000]
+        , _mtxFee = 1_000_000
+        , _mtxWitness = (Set.fromList ["alice", "bob"])
+        }
       ]
-    ]
+    ] mempty]
   , testProperty "xfer-2" $ testChainModelInteraction proxy
     (Map.fromList
       [ ("alice", Coin 1_000_000_000)
       ])
-    [ ModelBlock 1
-      [ ModelTx
-        { _mtxId = 1
-        , _mtxInputs = Set.fromList [ModelGensisIn "alice"]
+    [ModelEpoch [ ModelBlock 1
+      [ (modelTx 1)
+        { _mtxInputs = Set.fromList [ModelGensisIn "alice"]
         , _mtxOutputs =
           [ ModelTxOut "bob" 100_000_000
           , ModelTxOut "alice" ( 1_000_000_000 - ( 100_000_000 + 1_000_000))
@@ -89,9 +88,8 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
         }
       ]
     , ModelBlock 2
-      [ ModelTx
-        { _mtxId = 2
-        , _mtxInputs = Set.fromList [ModelTxIn 1 1]
+      [ (modelTx 2)
+        { _mtxInputs = Set.fromList [ModelTxIn 1 1]
         , _mtxOutputs =
           [ ModelTxOut "bob" 100_000_000
           , ModelTxOut "alice" (1_000_000_000 - 2 * ( 100_000_000 + 1_000_000))
@@ -100,7 +98,7 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
         , _mtxWitness = Set.fromList ["alice"]
         }
       ]
-    ]
+    ] mempty]
   ]
 
 
