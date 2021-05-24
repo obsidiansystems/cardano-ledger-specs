@@ -57,6 +57,7 @@ library
     time,
     cardano-crypto-class,
     data-default-class,
+    cardano-binary,
     lens,
     shelley-spec-ledger-test,
     cardano-ledger-alonzo,
@@ -102,10 +103,6 @@ test-suite cardano-ledger-test
   hs-source-dirs:      test
   build-depends:
       cardano-ledger-test
-    , shelley-spec-ledger
-    , cardano-ledger-alonzo
-    , shelley-spec-ledger-test
-    , tasty
   ghc-options:
       -threaded
       -rtsopts

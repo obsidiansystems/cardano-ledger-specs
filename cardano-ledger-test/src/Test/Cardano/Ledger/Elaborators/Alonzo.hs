@@ -22,12 +22,12 @@ import Cardano.Ledger.SafeHash (hashAnnotated)
 import Cardano.Ledger.ShelleyMA.Timelocks (ValidityInterval(..))
 import Cardano.Slotting.Slot
 import Control.Lens
+import Numeric.Natural
 import Control.Monad.State (MonadState(..))
 import Data.Default.Class
 import Data.Foldable
 import Data.Maybe.Strict (StrictMaybe(..))
 import Data.Proxy
-import Data.Traversable
 import Shelley.Spec.Ledger.API (ShelleyBasedEra)
 import Shelley.Spec.Ledger.API.Mempool (ApplyTxError(..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
@@ -90,8 +90,8 @@ mkAlonzoTx
   => SlotNo
   -> ModelTx
   -> m (Alonzo.ValidatedTx era)
-mkAlonzoTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxWitness mtxDCert) = do
-  outs <- traverse mkTxOut mtxOutputs
+mkAlonzoTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxDCert) = do
+  outs <- ifor mtxOutputs $ \idx -> mkTxOut (ModelUTxOId mtxId $ toEnum @Natural idx)
 
   ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList mtxInputs
   dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
@@ -113,10 +113,7 @@ mkAlonzoTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxWitness mtxDCert
       }
     bodyHash = hashAnnotated realTxBody
 
-  wits <- fmap fold $ for (toList mtxWitness) $ \mAddr -> do
-    (keyP, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
-    let wit = UTxO.makeWitnessVKey bodyHash keyP
-    pure $ Set.singleton wit
+  wits <- popWitnesses (Proxy :: Proxy era) bodyHash
 
   eraElaboratorState . eesTxIds %= Map.insert mtxId (UTxO.txid @era realTxBody)
   let

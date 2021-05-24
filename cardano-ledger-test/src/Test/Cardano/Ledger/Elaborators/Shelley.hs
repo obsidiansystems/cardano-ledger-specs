@@ -20,8 +20,8 @@ import Control.Monad.State (MonadState(..))
 import Data.Foldable
 import Data.Maybe.Strict (StrictMaybe(..))
 import Data.Proxy
-import Data.Traversable
 import Shelley.Spec.Ledger.API (ShelleyBasedEra)
+import Numeric.Natural
 import Shelley.Spec.Ledger.API.Mempool (ApplyTxError(..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.STS.EraMapping ()
@@ -68,8 +68,8 @@ mkShelleyTx
   => SlotNo
   -> ModelTx
   -> m (Shelley.Tx era)
-mkShelleyTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxWitness mtxDCert) = do
-  outs <- traverse mkTxOut $ mtxOutputs
+mkShelleyTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxDCert) = do
+  outs <- ifor mtxOutputs $ \idx -> mkTxOut (ModelUTxOId mtxId $ toEnum @Natural idx)
 
   ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList $ mtxInputs
   dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
@@ -85,12 +85,10 @@ mkShelleyTx maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxWitness mtxDCer
       , Shelley._mdHash = SNothing
       }
     bodyHash = hashAnnotated realTxBody
-  wits :: Core.Witnesses era <- fmap fold $ for (toList mtxWitness) $ \mAddr -> do
-    (keyP, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
-    let wit = UTxO.makeWitnessVKey bodyHash keyP
-    pure $ mempty {Shelley.addrWits = Set.singleton wit}
+  wits <- popWitnesses (Proxy :: Proxy era) bodyHash
+  let witSet = mempty {Shelley.addrWits = wits}
 
   eraElaboratorState . eesTxIds %= Map.insert mtxId (UTxO.txid @era realTxBody)
-  pure (Shelley.Tx realTxBody wits SNothing)
+  pure (Shelley.Tx realTxBody witSet SNothing)
 
 
