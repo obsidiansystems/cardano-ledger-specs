@@ -57,6 +57,7 @@ library
     time,
     cardano-crypto-class,
     data-default-class,
+    cardano-binary,
     lens,
     shelley-spec-ledger-test,
     cardano-ledger-alonzo,

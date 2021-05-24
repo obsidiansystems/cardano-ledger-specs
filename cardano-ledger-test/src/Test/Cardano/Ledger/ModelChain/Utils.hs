@@ -16,10 +16,13 @@ import Data.List ((\\), nub)
 import Data.Time.Clock (secondsToNominalDiffTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Shelley.Spec.Ledger.API.Genesis
-import Shelley.Spec.Ledger.API.Validation
+-- import Shelley.Spec.Ledger.API.Validation
 import Shelley.Spec.Ledger.BaseTypes (Network(Testnet))
+import Shelley.Spec.Ledger.BaseTypes (StrictMaybe(..))
+import Shelley.Spec.Ledger.BaseTypes (Globals(..))
 import Shelley.Spec.Ledger.Genesis
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
+import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import Shelley.Spec.Ledger.PParams (emptyPParams)
 import Test.Cardano.Ledger.ModelChain
 import Test.Shelley.Spec.Ledger.Utils (testGlobals)
@@ -40,7 +43,7 @@ chainModelInteractionWith
   => proxy era
   -> Map.Map ModelAddress Coin
   -> [ModelChainInteraction]
-  -> Either (ApplyBlockError era) (NewEpochState era)
+  -> Either (ApplyBlockError era) (NewEpochState era, ElaborateEraModelState era)
 chainModelInteractionWith _ genesisAccounts modelBlocks =
   let
     -- TODO, pass this in as a generator.
@@ -56,33 +59,38 @@ chainModelInteractionWith _ genesisAccounts modelBlocks =
       , sgMaxKESEvolutions  = 1 -- Gen.word64 (Range.linear 1 100000)
       , sgSlotLength        = (secondsToNominalDiffTime 1) -- genSlotLength
       , sgUpdateQuorum      = 1 -- Gen.word64 (Range.linear 1 100000)
-      , sgMaxLovelaceSupply = 1 -- Gen.word64 (Range.linear 1 100000)
+      , sgMaxLovelaceSupply = maxLovelaceSupply testGlobals -- 1 -- Gen.word64 (Range.linear 1 100000)
       , sgProtocolParams    = emptyPParams -- genPParams
       , sgGenDelegs         = mempty --  genGenesisDelegationList
       , sgInitialFunds      = mempty -- genFundsList
       , sgStaking           = emptyGenesisStaking -- genStaking
       }
 
-    elabState = elaborateInitialState sg def genesisAccounts def
-    (x, (y, _)) = elaborateBlocks_ testGlobals modelBlocks elabState
+    (nes0, ees) = elaborateInitialState sg def genesisAccounts def
+    nes1 = nes0
+      -- { LedgerState.nesRu = SJust $ LedgerState.Complete LedgerState.emptyRewardUpdate
+      -- }
+    elabState = (nes1, ees)
+    (x, y) = elaborateBlocks_ testGlobals modelBlocks elabState
   in bimap ApplyBlockTransitionError_Tx (\() -> y) x
 
 
 testChainModelInteractionWith ::
   ( Testable prop
-  , ElaborateEraModel era, ApplyBlock era
+  , ElaborateEraModel era
+  -- , ApplyBlock era
   , Default (AdditionalGenesisConfig era)
   , Show (PredicateFailure (Core.EraRule "LEDGER" era))
   , Default (ElaborateEraModelState era)
   )
   => proxy era
-  -> (State (Core.EraRule "TICK" era) -> prop)
+  -> (NewEpochState era -> ElaborateEraModelState era -> prop)
   -> Map.Map ModelAddress Coin
   -> [ModelChainInteraction]
   -> Property
 testChainModelInteractionWith proxy p a b =
   case chainModelInteractionWith proxy a b of
-    Right good -> property $! p good
+    Right good -> property $! uncurry p good
     Left bad -> counterexample (show bad) False
 
 compareLists :: forall a. (Show a, Eq a) => [a] -> [a] -> Property
@@ -118,7 +126,8 @@ testChainModelInteractionRejection proxy e a b =
 
 testChainModelInteraction ::
   ( Show (PredicateFailure (Core.EraRule "LEDGER" era))
-  , ElaborateEraModel era, ApplyBlock era
+  , ElaborateEraModel era
+  -- , ApplyBlock era
   , Default (AdditionalGenesisConfig era)
   , Default (ElaborateEraModelState era)
   )
@@ -126,7 +135,7 @@ testChainModelInteraction ::
   -> Map.Map ModelAddress Coin
   -> [ModelChainInteraction]
   -> Property
-testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (`seq` True)
+testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (\x y -> x `seq` y `seq` True)
 
 
 -- | helper to produce a "blank" ModelTx with most fields set to a reasonable
@@ -137,6 +146,5 @@ modelTx txId = ModelTx
   , _mtxInputs = Set.empty
   , _mtxOutputs = []
   , _mtxFee = 0
-  , _mtxWitness = Set.empty
   , _mtxDCert =  []
   }
