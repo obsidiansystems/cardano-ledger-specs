@@ -22,22 +22,32 @@ type DependGraph = FGL.Gr ModelTx TxDependency
 dependGraphGenerator :: Gen DependGraph
 dependGraphGenerator = frequency
   [ (1, pure FGL.empty)
+    (29, linearGraphGenerator)
   ]
 
 instance Arbitrary DependGraph where
   arbitrary = dependGraphGenerator
 
+linearGraphGenerator :: Gen DependGraph
+linearGraphGenerator = do
+  addrs <- flip take standardAddrs <$> chooseInt (minAddrs, maxAddrs)
+  genesis <- genesisInputsGenerator addrs
+  -- generate first tx, etc.
+  initialWits <- sublistOf addrs
+  initialOuts <- sublistOf addrs
+  let initialTx = ModelTx (ModelTxId 0) genesis initialOuts (ModelValue 1.7) initialWits
+  where
+    minAddrs = 4
+    maxAddrs = 16
+    minChainLength = 3
+    maxChainLength = 12
+
+linearBasicTxGenerator :: ModelTx -> Gen ModelTx
+linearBasicTxGenerator = do
+  pure ModelTx
+
 genesisInputsGenerator :: [ModelAddress] -> Gen (Set.Set ModelTxIn)
 genesisInputsGenerator addrs = Set.fromList . (map ModelGenesisIn) <$> sublistOf addrs
 
 standardAddrs :: [ModelAddress]
-standardAddrs = map ModelAddress
-  [ "Alice_Alderson"
-  , "Bob_Bonaparte"
-  , "Cho_Chang"
-  , "Darshan_Dhingra"
-  , "Evelyn_Eto"
-  , "Fernando_Frisco"
-  , "Ghada_Ghannam"
-  , "Horatio_Hurst"
-  ]
+standardAddrs = map (ModelAddress . ("a" ++) . show) [1..]
