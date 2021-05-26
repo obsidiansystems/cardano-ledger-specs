@@ -49,6 +49,8 @@ import Shelley.Spec.Ledger.STS.EraMapping ()
 import Test.Shelley.Spec.Ledger.Generator.ScriptClass (mkKeyPairs)
 import Test.Shelley.Spec.Ledger.Utils (mkVRFKeyPair)
 import Cardano.Slotting.EpochInfo.API
+import Cardano.Ledger.SafeHash (hashAnnotated)
+import Cardano.Ledger.SafeHash (HashAnnotated)
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Crypto.Hash.Class as Hash
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
@@ -417,7 +419,7 @@ class ElaborateEraModel era where
       _2 . eraElaboratorState . eesCurrentSlot .= slot
       -- tick the model
       lift $ zoom _1 $ State.state $ \nes0 -> ((), applyTick globals nes0 slot)
-      txSeq <- lift $ zoom _2 $ for mtxSeq $ \tx -> State.state $ makeTx (Proxy :: Proxy era) globals ttl tx
+      txSeq <- lift $ zoom _2 $ for mtxSeq $ \tx -> State.state $ elaborateTx (Proxy :: Proxy era) globals ttl tx
       mempoolEnv <- (\(nes0, _) -> mkMempoolEnv nes0 slot) <$> get
 
       -- apply the transactions.
@@ -458,13 +460,54 @@ class ElaborateEraModel era where
 
     pure $ initialState sg {sgInitialFunds = Map.unionWith const utxo0 $ sgInitialFunds sg } additionalGenesesConfig
 
-  makeTx
+  makeTxBody
+    :: proxy era
+    -> SlotNo -- ttl
+    -> Coin -- fee
+    -> Set.Set (Shelley.TxIn (Crypto era))
+    -> StrictSeq.StrictSeq (Core.TxOut era)
+    -> StrictSeq.StrictSeq (DCert (Crypto era))
+    -> Core.TxBody era
+
+  elaborateTx
     :: proxy era
     -> Globals
     -> SlotNo
     -> ModelTx
     -> ElaborateEraModelState era
     -> (Era.TxInBlock era, ElaborateEraModelState era)
+  default elaborateTx ::
+    ( HasEraElaboratorState (ElaborateEraModelState era) era
+    , DSIGN.Signable (C.DSIGN (Crypto era)) (Hash.Hash (C.HASH (Crypto era)) Shelley.EraIndependentTxBody)
+    , Hash.HashAlgorithm (C.HASH (Crypto era))
+    , HashAnnotated (Core.TxBody era) Shelley.EraIndependentTxBody (Crypto era)
+    , C.Crypto (Crypto era)
+    , UsesTxOut era
+    )
+    => proxy era
+    -> Globals
+    -> SlotNo
+    -> ModelTx
+    -> ElaborateEraModelState era
+    -> (Era.TxInBlock era, ElaborateEraModelState era)
+  elaborateTx proxy _ maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxDCert) = State.runState $ do
+    outs <- ifor mtxOutputs $ \idx -> mkTxOut $ ModelUTxOId mtxId $ toEnum @Natural idx
+    ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList mtxInputs
+    dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
+    let
+      realTxBody = makeTxBody proxy maxTTL (Coin . unModelValue $ mtxFee) ins (StrictSeq.fromList outs) (StrictSeq.fromList dcerts)
+      bodyHash = hashAnnotated realTxBody
+
+    wits <- popWitnesses (Proxy :: Proxy era) bodyHash
+
+    eraElaboratorState . eesTxIds %= Map.insert mtxId (UTxO.txid @era realTxBody)
+    pure $ makeTx proxy realTxBody wits
+
+  makeTx
+    :: proxy era
+    -> Core.TxBody era
+    -> Set.Set ( Shelley.WitVKey 'Witness (Crypto era) )
+    -> Era.TxInBlock era
 
   toEraPredicateFailure
     :: ModelPredicateFailure
