@@ -37,11 +37,11 @@ instance
     ModelValueNotConservedUTxO x y -> ApplyBlockTransitionError_Tx $ ApplyTxError
       [UtxowFailure (UtxoFailure (ValueNotConservedUTxO (Val.inject $ Coin $ unModelValue x) (Val.inject $ Coin $ unModelValue y)))]
 
-  makeTxBody _ maxTTL fee ins outs dcerts = Shelley.TxBody
+  makeTxBody _ maxTTL fee ins outs dcerts wdrl = Shelley.TxBody
     { Shelley._inputs = ins
     , Shelley._outputs = outs
     , Shelley._certs = dcerts
-    , Shelley._wdrls = Shelley.Wdrl Map.empty
+    , Shelley._wdrls = wdrl
     , Shelley._txfee = fee
     , Shelley._ttl = maxTTL
     , Shelley._txUpdate = SNothing

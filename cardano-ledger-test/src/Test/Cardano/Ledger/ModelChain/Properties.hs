@@ -26,6 +26,7 @@ import Data.Ratio ((%))
 import qualified Cardano.Ledger.Era
 
 import Cardano.Ledger.Shelley (ShelleyEra)
+import qualified Shelley.Spec.Ledger.TxBody as Shelley
 import Cardano.Ledger.Alonzo (AlonzoEra)
 import Test.Cardano.Ledger.Elaborators.Shelley ()
 import Test.Cardano.Ledger.Elaborators.Alonzo ()
@@ -57,7 +58,7 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
         ]
       checks nes ems =
         let rewards = observeRewards (nes, ems)
-        in Coin 0 < fold rewards
+        in counterexample (show rewards) $ Coin 0 === fold rewards
 
     in testProperty "deleg" $ testChainModelInteractionWith proxy checks genAct
       [ ModelEpoch
@@ -79,6 +80,19 @@ newTestFw proxy = testGroup (show $ typeRep proxy)
       , ModelEpoch [] (ModelBlocksMade $ Map.fromList [])
       , ModelEpoch [] (ModelBlocksMade $ Map.fromList [("pool1", 100)])
       , ModelEpoch [] (ModelBlocksMade $ Map.fromList [])
+      , ModelEpoch
+        [ ModelBlock 0
+          [ (modelTx 1)
+            { _mtxInputs = Set.fromList [ModelTxIn 1 0]
+            , _mtxOutputs =
+              [ ModelTxOut "alice" ( 1_000_000_000_000 - ( 2 * 100_000_000_000))
+              , ModelTxOut "bob" 8999820000000
+              ]
+            , _mtxFee = 100_000_000_000
+            , _mtxWdrl = Map.singleton "alice" (Coin 8999820000000)
+            }
+          ]
+        ] (ModelBlocksMade $ Map.fromList [])
       ]
   , testProperty "xfer" $ testChainModelInteraction proxy
     (Map.fromList

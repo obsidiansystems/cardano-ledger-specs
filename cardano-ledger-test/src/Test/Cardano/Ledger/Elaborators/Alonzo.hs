@@ -56,12 +56,12 @@ instance
         (UtxoFailure (ValueNotConservedUTxO (Val.inject $ Coin $ unModelValue x) (Val.inject $ Coin $ unModelValue y)))
         )]
 
-  makeTxBody _ maxTTL fee ins outs dcerts = Alonzo.TxBody
+  makeTxBody _ maxTTL fee ins outs dcerts wdrl = Alonzo.TxBody
     { Alonzo.inputs = ins
     , Alonzo.txinputs_fee = ins
     , Alonzo.outputs = outs
     , Alonzo.txcerts = dcerts
-    , Alonzo.txwdrls = Shelley.Wdrl Map.empty
+    , Alonzo.txwdrls = wdrl
     , Alonzo.txfee = fee
     , Alonzo.txvldt = ValidityInterval SNothing $ SJust (1+maxTTL)
     , Alonzo.txUpdates = SNothing

@@ -324,6 +324,7 @@ data ModelTx = ModelTx
   , _mtxOutputs :: ![ModelTxOut]
   , _mtxFee :: !ModelValue
   , _mtxDCert :: ![ModelDCert]
+  , _mtxWdrl :: !(Map.Map ModelAddress Coin)
   }
 
 data ModelBlock = ModelBlock SlotNo [ModelTx]
@@ -351,7 +352,8 @@ data ModelDCert
    | ModelDelegate ModelDelegation
    | ModelRegisterPool ModelPoolParams
    | ModelRetirePool ModelAddress EpochNo
-   -- TODO: MIR
+   -- TODO: | ModelMIRCert Shelley.MIRPot (Map.Map ModelAddress DeltaCoin)
+
 
 instance Semigroup ModelBlocksMade where
   ModelBlocksMade x <> ModelBlocksMade y = ModelBlocksMade $ Map.unionWith (+) x y
@@ -467,6 +469,7 @@ class ElaborateEraModel era where
     -> Set.Set (Shelley.TxIn (Crypto era))
     -> StrictSeq.StrictSeq (Core.TxOut era)
     -> StrictSeq.StrictSeq (DCert (Crypto era))
+    -> Shelley.Wdrl (Crypto era)
     -> Core.TxBody era
 
   elaborateTx
@@ -490,12 +493,17 @@ class ElaborateEraModel era where
     -> ModelTx
     -> ElaborateEraModelState era
     -> (Era.TxInBlock era, ElaborateEraModelState era)
-  elaborateTx proxy _ maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxDCert) = State.runState $ do
+  elaborateTx proxy _ maxTTL (ModelTx mtxId mtxInputs mtxOutputs mtxFee mtxDCert mtxWdrl) = State.runState $ do
     outs <- ifor mtxOutputs $ \idx -> mkTxOut $ ModelUTxOId mtxId $ toEnum @Natural idx
     ins :: Set.Set (Shelley.TxIn (Crypto era)) <- fmap fold $ traverse mkTxIn $ Set.toList mtxInputs
     dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
+    wdrl <- fmap Map.fromList $ for (Map.toList mtxWdrl) $ \(mAddr, qty) -> do
+      stakeCredential <- getStakeCredenetialFor proxy mAddr
+      (_, stakeKey) <- getKeyPairFor proxy mAddr
+      pushWitness stakeKey
+      pure (RewardAcnt Testnet stakeCredential, qty)
     let
-      realTxBody = makeTxBody proxy maxTTL (Coin . unModelValue $ mtxFee) ins (StrictSeq.fromList outs) (StrictSeq.fromList dcerts)
+      realTxBody = makeTxBody proxy maxTTL (Coin . unModelValue $ mtxFee) ins (StrictSeq.fromList outs) (StrictSeq.fromList dcerts) (Shelley.Wdrl wdrl)
       bodyHash = hashAnnotated realTxBody
 
     wits <- popWitnesses (Proxy :: Proxy era) bodyHash
@@ -608,6 +616,14 @@ class ElaborateEraModel era where
       fmap DCertPool $ RetirePool
         <$> getStakePoolFor proxy maddr
         <*> pure epochNo
+
+    -- TODO: maybe useful someday
+    -- ModelMIRCert srcPot mRewards ->
+    --   fmap ( DCertMir . Shelley.MIRCert srcPot . Shelley.StakeAddressesMIR . Map.fromList) $
+    --   for (Map.toList mRewards) $ \(maddr, reward) -> (,)
+    --     <$> getStakeCredenetialFor proxy maddr
+    --     <*> pure reward
+
 
 mkDCerts :: forall m era proxy.
   ( MonadState (ElaborateEraModelState era) m

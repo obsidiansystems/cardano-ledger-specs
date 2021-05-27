@@ -148,5 +148,6 @@ modelTx txId = ModelTx
   , _mtxInputs = Set.empty
   , _mtxOutputs = []
   , _mtxFee = 0
-  , _mtxDCert =  []
+  , _mtxDCert = []
+  , _mtxWdrl = Map.empty
   }
