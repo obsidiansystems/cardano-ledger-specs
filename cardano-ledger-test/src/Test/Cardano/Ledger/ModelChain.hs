@@ -314,6 +314,7 @@ data ModelTx = ModelTx
   , _mtxDCert :: ![ModelDCert]
   -- , _mtxWdrls :: !(Map.Map ModelAddress Coin)
   }
+  deriving (Eq, Ord, Show)
 
 data ModelBlock = ModelBlock SlotNo [ModelTx]
 data ModelBlocksMade = ModelBlocksMade (Map.Map ModelAddress Natural)
@@ -323,6 +324,7 @@ data ModelDelegation = ModelDelegation
   { _mdDelegator :: !ModelAddress
   , _mdDelegatee :: !ModelAddress
   }
+  deriving (Eq, Ord, Show)
 
 data ModelPoolParams = ModelPoolParams
   { _mppId :: !ModelAddress
@@ -331,6 +333,7 @@ data ModelPoolParams = ModelPoolParams
   , _mppMargin :: !UnitInterval
   , _mppRAcnt :: !ModelAddress
   }
+  deriving (Eq, Ord, Show)
 
 -- ignores genesis delegation details.
 data ModelDCert
@@ -340,6 +343,7 @@ data ModelDCert
    | ModelRegisterPool ModelPoolParams
    | ModelRetirePool ModelAddress EpochNo
    -- TODO: MIR
+   deriving (Eq, Ord, Show)
 
 instance Semigroup ModelBlocksMade where
   ModelBlocksMade x <> ModelBlocksMade y = ModelBlocksMade $ Map.unionWith (+) x y

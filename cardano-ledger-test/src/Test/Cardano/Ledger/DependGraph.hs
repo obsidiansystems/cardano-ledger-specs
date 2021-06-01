@@ -6,7 +6,7 @@ import qualified Data.Graph.Inductive as FGL
 import qualified Data.Set as Set
 import Data.Set.NonEmpty (NESet)
 
-import Test.QuickCheck (Arbitrary, Gen, arbitrary, frequency, sublistOf)
+import Test.QuickCheck
 
 import Test.Cardano.Ledger.ModelChain
 
@@ -22,7 +22,7 @@ type DependGraph = FGL.Gr ModelTx TxDependency
 dependGraphGenerator :: Gen DependGraph
 dependGraphGenerator = frequency
   [ (1, pure FGL.empty)
-    (29, linearGraphGenerator)
+  , (29, linearGraphGenerator)
   ]
 
 instance Arbitrary DependGraph where
@@ -33,18 +33,22 @@ linearGraphGenerator = do
   addrs <- flip take standardAddrs <$> chooseInt (minAddrs, maxAddrs)
   genesis <- genesisInputsGenerator addrs
   -- generate first tx, etc.
-  initialWits <- sublistOf addrs
-  initialOuts <- sublistOf addrs
-  let initialTx = ModelTx (ModelTxId 0) genesis initialOuts (ModelValue 1.7) initialWits
+  initOutAddrs <- sublistOf addrs
+  let initialOuts = map (\a -> ModelTxOut a (ModelValue 97)) initOutAddrs
+      initDCerts = map ModelRegisterStake initOutAddrs
+      initialTx = ModelTx (ModelTxId 0) genesis initialOuts (ModelValue 1) initDCerts
+      initialGraph = FGL.buildGr [([], 0, initialTx, [])] :: DependGraph
+  pure initialGraph
   where
     minAddrs = 4
     maxAddrs = 16
     minChainLength = 3
     maxChainLength = 12
 
-linearBasicTxGenerator :: ModelTx -> Gen ModelTx
-linearBasicTxGenerator = do
-  pure ModelTx
+-- -- Take the current state and generate next transaction
+-- linearBasicTxGenerator :: DependGraph -> Gen ModelTx
+-- linearBasicTxGenerator = do
+--   pure ModelTx
 
 genesisInputsGenerator :: [ModelAddress] -> Gen (Set.Set ModelTxIn)
 genesisInputsGenerator addrs = Set.fromList . (map ModelGenesisIn) <$> sublistOf addrs
