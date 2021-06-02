@@ -233,13 +233,13 @@ utxoTransition ::
     Embed (Core.EraRule "PPUP" era) (UTXO era),
     Environment (Core.EraRule "PPUP" era) ~ PpupEnv era,
     State (Core.EraRule "PPUP" era) ~ PpupState era,
-    Signal (Core.EraRule "PPUP" era) ~ Update era,
+    Signal (Core.EraRule "PPUP" era) ~ Maybe (Update era),
     HasField "certs" (Core.TxBody era) (StrictSeq (DCert (Crypto era))),
     HasField "inputs" (Core.TxBody era) (Set (TxIn (Crypto era))),
     HasField "mint" (Core.TxBody era) (Core.Value era),
     HasField "wdrls" (Core.TxBody era) (Wdrl (Crypto era)),
     HasField "vldt" (Core.TxBody era) ValidityInterval,
-    HasField "update" (Core.TxBody era) (Update era),
+    HasField "update" (Core.TxBody era) (StrictMaybe (Update era)),
     HasField "_minfeeA" (Core.PParams era) Natural,
     HasField "_minfeeB" (Core.PParams era) Natural,
     HasField "_keyDeposit" (Core.PParams era) Coin,
@@ -369,7 +369,7 @@ instance
     Embed (Core.EraRule "PPUP" era) (UTXO era),
     Environment (Core.EraRule "PPUP" era) ~ PpupEnv era,
     State (Core.EraRule "PPUP" era) ~ PpupState era,
-    Signal (Core.EraRule "PPUP" era) ~ Update era
+    Signal (Core.EraRule "PPUP" era) ~ Maybe (Update era)
   ) =>
   STS (UTXO era)
   where
@@ -505,10 +505,10 @@ instance
 txup ::
   forall era.
   Era era =>
-  HasField "update" (Core.TxBody era) (Update era) =>
+  HasField "update" (Core.TxBody era) (StrictMaybe (Update era)) =>
   Core.Tx era ->
-  Update era
-txup tx = getField @"update" txbody
+  Maybe (Update era)
+txup tx = strictMaybeToMaybe $ getField @"update" txbody
   where
     txbody :: Core.TxBody era
     txbody = (getField @"body" tx)

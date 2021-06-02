@@ -35,13 +35,16 @@ import Cardano.Ledger.ShelleyMA.Timelocks
   ( Timelock (..),
     validateTimelock,
   )
+import Cardano.Ledger.Val (Val ((<->)))
 import Cardano.Ledger.Voltaire.Prototype.Class
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxo (UTXO)
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import Control.DeepSeq (deepseq)
+import Data.Default.Class (def)
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 import Data.Typeable (Typeable)
 import GHC.Records (HasField (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
@@ -50,6 +53,7 @@ import qualified Shelley.Spec.Ledger.BlockChain as Shelley
     bbHash,
     txSeqTxns,
   )
+import Shelley.Spec.Ledger.EpochBoundary (BlocksMade (..), emptySnapShots)
 import Shelley.Spec.Ledger.Metadata (validMetadatum)
 import qualified Shelley.Spec.Ledger.PParams as Shelley
 import Shelley.Spec.Ledger.Scripts (ScriptHash)
@@ -262,3 +266,36 @@ type instance Core.EraRule "UTXOW" (VoltairePrototypeEra proto c) = UTXOW (Volta
 -- that there will be a new set of transition rules that work differently
 -- from the protocol parameter update scheme of pre-Voltaire Shelley.
 type instance Core.EraRule "PPUP" (VoltairePrototypeEra proto c) = PPUP (VoltairePrototypeEra proto c)
+
+instance ( CryptoClass.Crypto c) => Shelley.CanStartFromGenesis (VoltairePrototypeEra proto c) where
+  initialState sg () =
+    Shelley.NewEpochState
+      initialEpochNo
+      (BlocksMade Map.empty)
+      (BlocksMade Map.empty)
+      ( Shelley.EpochState
+          (Shelley.AccountState (Shelley.Coin 0) reserves)
+          emptySnapShots
+          (Shelley.LedgerState
+              ( Shelley.UTxOState
+                  initialUtxo
+                  (Shelley.Coin 0)
+                  (Shelley.Coin 0)
+                  def
+              )
+              (Shelley.DPState (def {Shelley._genDelegs = Shelley.GenDelegs genDelegs}) def)
+          )
+          pp
+          pp
+          def
+      )
+      SNothing
+      (Shelley.PoolDistr Map.empty)
+    where
+      initialEpochNo = 0
+      initialUtxo = Shelley.genesisUTxO sg
+      reserves =
+        Shelley.word64ToCoin (Shelley.sgMaxLovelaceSupply sg)
+          <-> Shelley.balance initialUtxo
+      genDelegs = Shelley.sgGenDelegs sg
+      pp = Shelley.sgProtocolParams sg

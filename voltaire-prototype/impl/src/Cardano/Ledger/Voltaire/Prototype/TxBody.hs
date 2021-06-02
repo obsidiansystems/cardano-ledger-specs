@@ -146,7 +146,7 @@ data TxBodyRaw era = TxBodyRaw
     wdrls :: !(Wdrl (Crypto era)),
     txfee :: !Coin,
     vldt :: !ValidityInterval, -- imported from Timelocks
-    update :: !(Update era),
+    update :: !(StrictMaybe (Update era)),
     adHash :: !(StrictMaybe (AuxiliaryDataHash (Crypto era))),
     mint :: !(Value era)
   }
@@ -248,7 +248,7 @@ initial =
     (Wdrl Map.empty)
     (Coin 0)
     (ValidityInterval SNothing SNothing)
-    emptyUpdate
+    SNothing
     SNothing
     zero
 
@@ -300,7 +300,7 @@ pattern TxBody ::
   Wdrl (Crypto era) ->
   Coin ->
   ValidityInterval ->
-  Update era ->
+  StrictMaybe (Update era) ->
   StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   Value era ->
   TxBody era
@@ -328,7 +328,7 @@ pattern TxBody' ::
   Wdrl (Crypto era) ->
   Coin ->
   ValidityInterval ->
-  Update era ->
+  StrictMaybe (Update era) ->
   StrictMaybe (AuxiliaryDataHash (Crypto era)) ->
   Value era ->
   TxBody era
@@ -389,7 +389,7 @@ instance HasField "txfee" (TxBody era) Coin where
 instance HasField "vldt" (TxBody era) ValidityInterval where
   getField (TxBodyConstr (Memo m _)) = getField @"vldt" m
 
-instance HasField "update" (TxBody era) (Update era) where
+instance HasField "update" (TxBody era) (StrictMaybe (Update era)) where
   getField (TxBodyConstr (Memo m _)) = getField @"update" m
 
 instance
@@ -425,7 +425,7 @@ ppTxBody (TxBodyConstr (Memo (TxBodyRaw i o d w fee vi u m mint) _)) =
       ("withdrawals", ppWdrl w),
       ("txfee", ppCoin fee),
       ("vldt", ppValidityInterval vi),
-      ("update", ppUpdate u),
+      ("update", ppStrictMaybe ppUpdate u),
       ("auxDataHash", ppStrictMaybe ppAuxiliaryDataHash m),
       ("mint", prettyA mint)
     ]
