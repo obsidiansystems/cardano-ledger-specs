@@ -52,7 +52,6 @@ import qualified Shelley.Spec.Ledger.API as API
 import qualified Shelley.Spec.Ledger.PParams as Shelley
 import qualified Shelley.Spec.Ledger.TxBody as Shelley
 
-
 --------------------------------------------------------------------------------
 -- Translation from Mary to Alonzo
 --
