@@ -35,14 +35,14 @@ import Cardano.Ledger.ShelleyMA.Timelocks
   ( Timelock (..),
     validateTimelock,
   )
-import Cardano.Ledger.Val (Val ((<->)))
+import Cardano.Ledger.Val (Val ((<->), coin))
 import Cardano.Ledger.Voltaire.Prototype.Class
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxo (UTXO)
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import Control.DeepSeq (deepseq)
-import Data.Default.Class (def)
+import Data.Default.Class (def, Default)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Typeable (Typeable)
@@ -267,7 +267,13 @@ type instance Core.EraRule "UTXOW" (VoltairePrototypeEra proto c) = UTXOW (Volta
 -- from the protocol parameter update scheme of pre-Voltaire Shelley.
 type instance Core.EraRule "PPUP" (VoltairePrototypeEra proto c) = PPUP (VoltairePrototypeEra proto c)
 
-instance ( CryptoClass.Crypto c) => Shelley.CanStartFromGenesis (VoltairePrototypeEra proto c) where
+instance 
+  ( CryptoClass.Crypto c,
+    Default (Shelley.State (Core.EraRule "PPUP" (VoltairePrototypeEra proto c))),
+    VoltaireClass (VoltairePrototypeEra proto c),
+    Typeable proto
+  ) => 
+  Shelley.CanStartFromGenesis (VoltairePrototypeEra proto c) where
   initialState sg () =
     Shelley.NewEpochState
       initialEpochNo
@@ -296,6 +302,6 @@ instance ( CryptoClass.Crypto c) => Shelley.CanStartFromGenesis (VoltairePrototy
       initialUtxo = Shelley.genesisUTxO sg
       reserves =
         Shelley.word64ToCoin (Shelley.sgMaxLovelaceSupply sg)
-          <-> Shelley.balance initialUtxo
+          <-> coin (Shelley.balance initialUtxo)
       genDelegs = Shelley.sgGenDelegs sg
       pp = Shelley.sgProtocolParams sg
