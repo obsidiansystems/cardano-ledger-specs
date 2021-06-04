@@ -36,7 +36,7 @@ import Test.Cardano.Ledger.ModelChain
 
 instance Default AlonzoGenesis where
   def = AlonzoGenesis
-    { adaPerUTxOWord = Coin 10000
+    { coinsPerUTxOWord = Coin 10000
     , costmdls = Map.fromSet (const $ CostModel Map.empty) $ Set.fromList [minBound..]
     , prices = Prices (Coin 1000) (Coin 1000)
     , maxTxExUnits = ExUnits 100 100
@@ -80,7 +80,7 @@ instance
         { Alonzo.txwitsVKey = wits
         , Alonzo.txwitsBoot = Set.empty
         , Alonzo.txscripts = Map.empty
-        , Alonzo.txdats = Map.empty
+        , Alonzo.txdats = mempty
         , Alonzo.txrdmrs = Alonzo.Redeemers Map.empty
         }
     in (Alonzo.ValidatedTx realTxBody witSet (Alonzo.IsValidating True) SNothing)
