@@ -46,6 +46,7 @@ import Data.Default.Class (def, Default)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Typeable (Typeable)
+import Data.Foldable (toList)
 import GHC.Records (HasField (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
 import qualified Shelley.Spec.Ledger.BlockChain as Shelley
@@ -68,6 +69,7 @@ import qualified Shelley.Spec.Ledger.STS.Snap as Shelley
 import qualified Shelley.Spec.Ledger.STS.Tick as Shelley
 import qualified Shelley.Spec.Ledger.STS.Upec as Shelley
 import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet, segwitTx)
+import Shelley.Spec.Ledger.Keys (asWitness)
 
 data VoltairePrototype = VoltairePrototype_One
 
@@ -91,6 +93,17 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
   fromUtxoEnv = One.fromUtxoEnv
   ppupTransition = One.ppupTransition
+  proposalKeyHash = 
+    -- TODO: is this right? Or should we be using a 'GenDelegs' similar to how
+    --       'Shelley.Spec.Ledger.LedgerState.propWits' does it?
+    Set.map asWitness
+      . Set.fromList 
+      . toList 
+      . fmap (One.proposal_submitter . proposalHeader) 
+      . submissionSeq 
+      . _update_submissions
+      where
+        submissionSeq (Submissions seq') = seq'
 
 --------------------------------------------------------------------------------
 -- Era and Shelley instances

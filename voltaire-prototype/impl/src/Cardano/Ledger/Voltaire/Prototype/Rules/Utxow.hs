@@ -15,6 +15,8 @@ import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Era (Crypto), TxInBlock)
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxo (UTXO, UtxoPredicateFailure)
 import Cardano.Ledger.Voltaire.Prototype.TxBody ()
+import Cardano.Ledger.Voltaire.Prototype.Class (VoltaireClass)
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Utxow.ShelleyStyleWitness as SSW
 import Control.State.Transition.Extended
 import GHC.Records (HasField)
 import Shelley.Spec.Ledger.Address (Addr)
@@ -23,9 +25,7 @@ import Shelley.Spec.Ledger.LedgerState (UTxOState)
 import qualified Shelley.Spec.Ledger.STS.Ledger as Shelley
 import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv)
 import Shelley.Spec.Ledger.STS.Utxow
-  ( ShelleyStyleWitnessNeeds,
-    UtxowPredicateFailure (..),
-    shelleyStyleWitness,
+  ( UtxowPredicateFailure (..),
   )
 import Shelley.Spec.Ledger.Tx (WitnessSet)
 
@@ -54,7 +54,8 @@ instance
     State (Core.EraRule "UTXO" era) ~ UTxOState era,
     Signal (Core.EraRule "UTXO" era) ~ TxInBlock era,
     -- Supply the HasField and Validate instances for Mary and Allegra (which match Shelley)
-    ShelleyStyleWitnessNeeds era
+    SSW.ShelleyStyleWitnessNeeds era,
+    VoltaireClass era
   ) =>
   STS (UTXOW era)
   where
@@ -65,7 +66,7 @@ instance
   type
     PredicateFailure (UTXOW era) =
       UtxowPredicateFailure era
-  transitionRules = [shelleyStyleWitness id]
+  transitionRules = [SSW.shelleyStyleWitness id]
 
   -- The ShelleyMA Era uses the same PredicateFailure type
   -- as Shelley, so the 'embed' function is identity
