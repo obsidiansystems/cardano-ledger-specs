@@ -229,7 +229,7 @@ instance
   STS (PPUP era)
   where
     type State (PPUP era) = PpupState era
-    type Signal (PPUP era) = Update era
+    type Signal (PPUP era) = Maybe (Update era)
     type Environment (PPUP era) = PpupEnv era
     type BaseM (PPUP era) = ShelleyBase
     type PredicateFailure (PPUP era) = PpupPredicateFailure era
