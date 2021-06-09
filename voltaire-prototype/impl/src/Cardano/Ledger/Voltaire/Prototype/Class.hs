@@ -26,6 +26,7 @@ import Data.Coders
     (<!),
     invalidKey,
   )
+import Data.Set (Set)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Kind
@@ -103,7 +104,7 @@ class
     type PpupPredicateFailure era :: Type
     fromUtxoEnv :: Shelley.UtxoEnv era -> PpupEnv era
     ppupTransition :: TransitionRule (PPUP era)
-    proposalWitness :: Proposal era -> KeyHash 'Witness (Crypto era)
+    submissionsWitnesses :: Shelley.UtxoEnv era -> Submissions era -> Set (KeyHash 'Witness (Crypto era))
 
 -- | A proposal is its body which describes what the proposed change is paired
 -- with its header which describes how the proposal should be handled by the

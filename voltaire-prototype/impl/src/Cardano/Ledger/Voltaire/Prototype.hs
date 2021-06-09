@@ -42,9 +42,11 @@ import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import Control.DeepSeq (deepseq)
+import Control.SetAlgebra (eval, (◁))
 import Data.Default.Class (def, Default)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+import Data.Foldable (toList)
 import Data.Typeable (Typeable)
 import GHC.Records (HasField (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
@@ -92,7 +94,17 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
   fromUtxoEnv = One.fromUtxoEnv
   ppupTransition = One.ppupTransition
-  proposalWitness = asWitness . One.proposal_submitter . proposalHeader
+  submissionsWitnesses (Shelley.UtxoEnv _ _ _ (Shelley.GenDelegs genDelegs)) submissions =
+    Set.map asWitness . Set.fromList $ Map.elems updateKeys
+   where
+    submissionsKeys =
+        Set.fromList
+      . fmap (One.proposal_submitter . proposalHeader)
+      . toList
+      . submissionSeq
+    updateKeys' = eval (submissionsKeys submissions ◁ genDelegs)
+    updateKeys = Map.map Shelley.genDelegKeyHash updateKeys'
+    submissionSeq (Submissions seq') = seq'
 
 --------------------------------------------------------------------------------
 -- Era and Shelley instances

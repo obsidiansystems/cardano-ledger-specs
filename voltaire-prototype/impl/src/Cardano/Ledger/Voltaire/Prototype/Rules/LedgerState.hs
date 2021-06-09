@@ -35,10 +35,10 @@ import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Crypto, Era)
 import qualified Data.Map.Strict as Map
 import Data.Sequence.Strict (StrictSeq)
-import Data.Foldable (toList)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Records (HasField (..))
+import qualified Shelley.Spec.Ledger.API as Shelley
 import Shelley.Spec.Ledger.Address (Addr (..), bootstrapKeyHash)
 import Shelley.Spec.Ledger.BaseTypes
   ( StrictMaybe (..),
@@ -53,8 +53,7 @@ import Shelley.Spec.Ledger.Delegation.Certificates
     requiresVKeyWitness,
   )
 import Shelley.Spec.Ledger.Keys
-  ( GenDelegs (..),
-    KeyHash (..),
+  ( KeyHash (..),
     KeyRole (..),
     asWitness
   )
@@ -75,9 +74,8 @@ import Shelley.Spec.Ledger.UTxO
   )
 import Shelley.Spec.Ledger.LedgerState (WitHashes(WitHashes))
 import Cardano.Ledger.Voltaire.Prototype.Class
-  ( VoltaireClass (proposalWitness),
+  ( VoltaireClass (submissionsWitnesses),
     Update(..),
-    Submissions(..),
     Votes(..)
   )
 
@@ -97,9 +95,9 @@ witsVKeyNeeded ::
   ) =>
   UTxO era ->
   tx ->
-  GenDelegs (Crypto era) ->
+  Shelley.UtxoEnv era ->
   WitHashes (Crypto era)
-witsVKeyNeeded utxo' tx genDelegs =
+witsVKeyNeeded utxo' tx utxoEnv =
   WitHashes $
     certAuthors
       `Set.union` inputAuthors
@@ -151,18 +149,13 @@ witsVKeyNeeded utxo' tx genDelegs =
         maybe Set.empty allWitnesses (strictMaybeToMaybe $ getField @"update" txbody)
       where
         allWitnesses update =
-          voteWitnesses update `Set.union` submissionWitnesses update
+          voteWitnesses update `Set.union` submissionsWitnesses' update
         voteWitnesses =
             Set.unions
           . map Map.keysSet
           . Map.elems
           . voteMap
           . _update_votes
-        submissionWitnesses =
-            Set.fromList
-          . toList
-          . fmap proposalWitness
-          . submissionSeq
-          . _update_submissions
+        submissionsWitnesses' update =
+          submissionsWitnesses utxoEnv (_update_submissions update)
         voteMap (Votes map') = map'
-        submissionSeq (Submissions seq') = seq'

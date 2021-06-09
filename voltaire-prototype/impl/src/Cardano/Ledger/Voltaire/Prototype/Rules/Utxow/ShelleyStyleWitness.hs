@@ -111,7 +111,7 @@ shelleyStyleWitness ::
   (UtxowPredicateFailure era -> PredicateFailure (utxow era)) ->
   TransitionRule (utxow era)
 shelleyStyleWitness embed = do
-  (TRC (UtxoEnv slot pp stakepools genDelegs, u, tx)) <- judgmentContext
+  (TRC (utxoEnv@(UtxoEnv slot pp stakepools genDelegs), u, tx)) <- judgmentContext
   let txbody = getField @"body" tx
       utxo = _utxo u
       witsKeyHashes = witsFromTxWitnesses @era tx
@@ -137,7 +137,7 @@ shelleyStyleWitness embed = do
   -- check VKey witnesses
   verifiedWits @era tx ?!: (embed . InvalidWitnessesUTXOW)
 
-  let needed = witsVKeyNeeded @era utxo tx genDelegs
+  let needed = witsVKeyNeeded @era utxo tx utxoEnv
       missingWitnesses = diffWitHashes needed witsKeyHashes
       haveNeededWitnesses = if nullWitHashes missingWitnesses then Right () else Left missingWitnesses
   haveNeededWitnesses ?!: (embed . MissingVKeyWitnessesUTXOW)
