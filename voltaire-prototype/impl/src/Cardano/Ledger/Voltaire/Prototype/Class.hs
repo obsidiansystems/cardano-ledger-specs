@@ -43,7 +43,6 @@ import Shelley.Spec.Ledger.Serialization
   )
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import qualified Shelley.Spec.Ledger.STS.Utxo as Shelley
-import Data.Set (Set)
 
 class
   ( Eq (PpupPredicateFailure era)
@@ -104,7 +103,7 @@ class
     type PpupPredicateFailure era :: Type
     fromUtxoEnv :: Shelley.UtxoEnv era -> PpupEnv era
     ppupTransition :: TransitionRule (PPUP era)
-    proposalKeyHash :: Update era -> Set (KeyHash 'Witness (Crypto era))
+    proposalWitness :: Proposal era -> KeyHash 'Witness (Crypto era)
 
 -- | A proposal is its body which describes what the proposed change is paired
 -- with its header which describes how the proposal should be handled by the

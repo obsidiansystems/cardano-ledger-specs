@@ -35,6 +35,7 @@ import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Crypto, Era)
 import qualified Data.Map.Strict as Map
 import Data.Sequence.Strict (StrictSeq)
+import Data.Foldable (toList)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Records (HasField (..))
@@ -73,11 +74,16 @@ import Shelley.Spec.Ledger.UTxO
     txinLookup,
   )
 import Shelley.Spec.Ledger.LedgerState (WitHashes(WitHashes))
-import Cardano.Ledger.Voltaire.Prototype.Class (VoltaireClass (proposalKeyHash), Update)
+import Cardano.Ledger.Voltaire.Prototype.Class
+  ( VoltaireClass (proposalWitness),
+    Update(..),
+    Submissions(..),
+    Votes(..)
+  )
 
--- | NB: Only difference between this and 
+-- | NB: Only difference between this and
 -- 'Shelley.Spec.Ledger.LedgerState.witsVKeyNeeded'
--- is how @updateKeys@ is calculated (via 'proposalKeyHash' of 'VoltaireClass').
+-- is how @voltaireUpdateWitnesses@ is calculated.
 witsVKeyNeeded ::
   forall era tx.
   ( Era era,
@@ -99,7 +105,7 @@ witsVKeyNeeded utxo' tx genDelegs =
       `Set.union` inputAuthors
       `Set.union` owners
       `Set.union` wdrlAuthors
-      `Set.union` updateKeys
+      `Set.union` voltaireUpdateWitnesses
   where
     txbody = getField @"body" tx
     inputAuthors :: Set (KeyHash 'Witness (Crypto era))
@@ -139,6 +145,24 @@ witsVKeyNeeded utxo' tx genDelegs =
       where
         accum cert ans | requiresVKeyWitness cert = Set.union (cwitness cert) ans
         accum _cert ans = ans
-    updateKeys :: Set (KeyHash 'Witness (Crypto era))
-    updateKeys =
-        maybe Set.empty proposalKeyHash (strictMaybeToMaybe $ getField @"update" txbody)
+
+    voltaireUpdateWitnesses :: Set (KeyHash 'Witness (Crypto era))
+    voltaireUpdateWitnesses =
+        maybe Set.empty allWitnesses (strictMaybeToMaybe $ getField @"update" txbody)
+      where
+        allWitnesses update =
+          voteWitnesses update `Set.union` submissionWitnesses update
+        voteWitnesses =
+            Set.unions
+          . map Map.keysSet
+          . Map.elems
+          . voteMap
+          . _update_votes
+        submissionWitnesses =
+            Set.fromList
+          . toList
+          . fmap proposalWitness
+          . submissionSeq
+          . _update_submissions
+        voteMap (Votes map') = map'
+        submissionSeq (Submissions seq') = seq'
