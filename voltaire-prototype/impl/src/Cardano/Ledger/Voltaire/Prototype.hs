@@ -17,10 +17,10 @@ import Cardano.Ledger.AuxiliaryData
   )
 import qualified Cardano.Ledger.Core as Core
 import qualified Cardano.Ledger.Crypto as CryptoClass
-import Cardano.Ledger.Era (Crypto, Era, SupportsSegWit (..), ValidateScript (..))
+import Cardano.Ledger.Era (Crypto, Era, SupportsSegWit (..), ValidateScript (..), PreviousEra)
 import qualified Cardano.Ledger.Mary.Value as V
 import Cardano.Ledger.SafeHash (hashAnnotated)
-import Cardano.Ledger.Shelley (nativeMultiSigTag)
+import Cardano.Ledger.Shelley (nativeMultiSigTag, ShelleyEra)
 import Cardano.Ledger.Shelley.Constraints
   ( UsesPParams (..),
     UsesTxBody,
@@ -105,6 +105,8 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     updateKeys' = eval (submissionsKeys submissions ◁ genDelegs)
     updateKeys = Map.map Shelley.genDelegKeyHash updateKeys'
     submissionSeq (Submissions seq') = seq'
+
+type instance PreviousEra (VoltairePrototypeEra 'VoltairePrototype_One c) = ShelleyEra c
 
 --------------------------------------------------------------------------------
 -- Era and Shelley instances
