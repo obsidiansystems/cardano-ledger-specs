@@ -8,6 +8,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveAnyClass #-}
 
 module Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
   ( DELEG,
@@ -20,7 +21,6 @@ where
 import Cardano.Binary
   ( FromCBOR (..),
     ToCBOR (..),
-    encodeListLen,
   )
 import Cardano.Ledger.Coin (Coin (..), DeltaCoin (..), addDeltaCoin, toDeltaCoin)
 import qualified Cardano.Ledger.Core as Core
@@ -33,14 +33,12 @@ import Data.Group (Group (..))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import Data.Typeable (Typeable)
-import Data.Word (Word8)
 import GHC.Generics (Generic)
 import GHC.Records (HasField)
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.BaseTypes
   ( Globals (..),
     ShelleyBase,
-    invalidKey,
   )
 import Shelley.Spec.Ledger.Credential (Credential)
 import Shelley.Spec.Ledger.HardForks as HardForks
@@ -77,15 +75,23 @@ import Shelley.Spec.Ledger.Slot
     (+*),
   )
 import Shelley.Spec.Ledger.TxBody
-  ( DCert (..),
-    DelegCert (..),
+  ( DelegCert (..),
     Delegation (..),
     GenesisDelegCert (..),
-    MIRCert (..),
     MIRPot (..),
     MIRTarget (..),
-    Ptr,
+    Ptr, PoolCert
   )
+import Cardano.Prelude (NFData)
+
+-- | Same as Shelley's except no 'DCertMir'
+data DCert crypto
+  = DCertDeleg !(DelegCert crypto)
+  | DCertPool !(PoolCert crypto)
+  | DCertGenesis !(GenesisDelegCert crypto)
+  deriving (Show, Generic, Eq, NFData)
+
+instance NoThunks (DCert crypto)
 
 data DELEG era
 
@@ -100,6 +106,7 @@ deriving instance (Show (Core.PParams era)) => Show (DelegEnv era)
 
 deriving instance (Eq (Core.PParams era)) => Eq (DelegEnv era)
 
+-- Same as Shelley's except no MIR-related failures
 data DelegPredicateFailure era
   = StakeKeyAlreadyRegisteredDELEG
       !(Credential 'Staking (Crypto era)) -- Credential which is already registered
@@ -119,22 +126,8 @@ data DelegPredicateFailure era
       !(KeyHash 'Genesis (Crypto era)) -- Unknown Genesis KeyHash
   | DuplicateGenesisDelegateDELEG
       !(KeyHash 'GenesisDelegate (Crypto era)) -- Keyhash which is already delegated to
-  | InsufficientForInstantaneousRewardsDELEG
-      !MIRPot -- which pot the rewards are to be drawn from, treasury or reserves
-      !Coin -- amount of rewards to be given out
-      !Coin -- size of the pot from which the lovelace is drawn
-  | MIRCertificateTooLateinEpochDELEG
-      !SlotNo -- current slot
-      !SlotNo -- Core.EraRule "MIR" must be submitted before this slot
   | DuplicateGenesisVRFDELEG
       !(Hash (Crypto era) (VerKeyVRF (Crypto era))) --VRF KeyHash which is already delegated to
-  | MIRTransferNotCurrentlyAllowed
-  | MIRNegativesNotCurrentlyAllowed
-  | InsufficientForTransferDELEG
-      !MIRPot -- which pot the rewards are to be drawn from, treasury or reserves
-      !Coin -- amount attempted to transfer
-      !Coin -- amount available
-  | MIRProducesNegativeUpdate
   deriving (Show, Eq, Generic)
 
 instance
@@ -153,102 +146,22 @@ instance
 
 instance NoThunks (DelegPredicateFailure era)
 
+-- | TODO
 instance
   (Typeable era, Era era, Typeable (Core.Script era)) =>
   ToCBOR (DelegPredicateFailure era)
   where
-  toCBOR = \case
-    StakeKeyAlreadyRegisteredDELEG cred ->
-      encodeListLen 2 <> toCBOR (0 :: Word8) <> toCBOR cred
-    StakeKeyNotRegisteredDELEG cred ->
-      encodeListLen 2 <> toCBOR (1 :: Word8) <> toCBOR cred
-    StakeKeyNonZeroAccountBalanceDELEG rewardBalance ->
-      encodeListLen 2 <> toCBOR (2 :: Word8) <> toCBOR rewardBalance
-    StakeDelegationImpossibleDELEG cred ->
-      encodeListLen 2 <> toCBOR (3 :: Word8) <> toCBOR cred
-    WrongCertificateTypeDELEG ->
-      encodeListLen 1 <> toCBOR (4 :: Word8)
-    GenesisKeyNotInMappingDELEG gkh ->
-      encodeListLen 2 <> toCBOR (5 :: Word8) <> toCBOR gkh
-    DuplicateGenesisDelegateDELEG kh ->
-      encodeListLen 2 <> toCBOR (6 :: Word8) <> toCBOR kh
-    InsufficientForInstantaneousRewardsDELEG pot needed potAmount ->
-      encodeListLen 4 <> toCBOR (7 :: Word8)
-        <> toCBOR pot
-        <> toCBOR needed
-        <> toCBOR potAmount
-    MIRCertificateTooLateinEpochDELEG sNow sTooLate ->
-      encodeListLen 3 <> toCBOR (8 :: Word8) <> toCBOR sNow <> toCBOR sTooLate
-    DuplicateGenesisVRFDELEG vrf ->
-      encodeListLen 2 <> toCBOR (9 :: Word8) <> toCBOR vrf
-    StakeKeyInRewardsDELEG cred ->
-      encodeListLen 2 <> toCBOR (10 :: Word8) <> toCBOR cred
-    MIRTransferNotCurrentlyAllowed ->
-      encodeListLen 1 <> toCBOR (11 :: Word8)
-    MIRNegativesNotCurrentlyAllowed ->
-      encodeListLen 1 <> toCBOR (12 :: Word8)
-    InsufficientForTransferDELEG pot needed available ->
-      encodeListLen 4 <> toCBOR (13 :: Word8)
-        <> toCBOR pot
-        <> toCBOR needed
-        <> toCBOR available
-    MIRProducesNegativeUpdate ->
-      encodeListLen 1 <> toCBOR (14 :: Word8)
+  toCBOR = error "TODO"
 
+-- | TODO
 instance
   (Era era, Typeable (Core.Script era)) =>
   FromCBOR (DelegPredicateFailure era)
   where
   fromCBOR = decodeRecordSum "PredicateFailure (DELEG era)" $
-    \case
-      0 -> do
-        kh <- fromCBOR
-        pure (2, StakeKeyAlreadyRegisteredDELEG kh)
-      1 -> do
-        kh <- fromCBOR
-        pure (2, StakeKeyNotRegisteredDELEG kh)
-      2 -> do
-        b <- fromCBOR
-        pure (2, StakeKeyNonZeroAccountBalanceDELEG b)
-      3 -> do
-        kh <- fromCBOR
-        pure (2, StakeDelegationImpossibleDELEG kh)
-      4 -> do
-        pure (1, WrongCertificateTypeDELEG)
-      5 -> do
-        gkh <- fromCBOR
-        pure (2, GenesisKeyNotInMappingDELEG gkh)
-      6 -> do
-        kh <- fromCBOR
-        pure (2, DuplicateGenesisDelegateDELEG kh)
-      7 -> do
-        pot <- fromCBOR
-        needed <- fromCBOR
-        potAmount <- fromCBOR
-        pure (4, InsufficientForInstantaneousRewardsDELEG pot needed potAmount)
-      8 -> do
-        sNow <- fromCBOR
-        sTooLate <- fromCBOR
-        pure (3, MIRCertificateTooLateinEpochDELEG sNow sTooLate)
-      9 -> do
-        vrf <- fromCBOR
-        pure (2, DuplicateGenesisVRFDELEG vrf)
-      10 -> do
-        kh <- fromCBOR
-        pure (2, StakeKeyInRewardsDELEG kh)
-      11 -> do
-        pure (1, MIRTransferNotCurrentlyAllowed)
-      12 -> do
-        pure (1, MIRNegativesNotCurrentlyAllowed)
-      13 -> do
-        pot <- fromCBOR
-        needed <- fromCBOR
-        available <- fromCBOR
-        pure (4, InsufficientForTransferDELEG pot needed available)
-      14 -> do
-        pure (1, MIRProducesNegativeUpdate)
-      k -> invalidKey k
+    error "TODO"
 
+-- | Same as Shelley's but without the MIR-related stuff
 delegationTransition ::
   ( Typeable era,
     HasField "_protocolVersion" (Core.PParams era) ProtVer
@@ -315,61 +228,87 @@ delegationTransition = do
         ds
           { _fGenDelegs = eval ((_fGenDelegs ds) ⨃ (singleton (FutureGenDeleg s' gkh) (GenDelegPair vkh vrf)))
           }
-    DCertMir (MIRCert targetPot (StakeAddressesMIR credCoinMap)) -> do
-      if HardForks.allowMIRTransfer pp
-        then do
-          sp <- liftSTS $ asks stabilityWindow
-          firstSlot <- liftSTS $ do
-            ei <- asks epochInfo
-            EpochNo currEpoch <- epochInfoEpoch ei slot
-            epochInfoFirst ei $ EpochNo (currEpoch + 1)
-          let tooLate = firstSlot *- Duration sp
-          slot < tooLate
-            ?! MIRCertificateTooLateinEpochDELEG slot tooLate
+    DCertPool _ -> do
+      failBecause WrongCertificateTypeDELEG -- this always fails
+      pure ds
 
-          let (potAmount, delta, instantaneousRewards) =
-                case targetPot of
-                  ReservesMIR -> (_reserves acnt, deltaReserves . _irwd $ ds, iRReserves $ _irwd ds)
-                  TreasuryMIR -> (_treasury acnt, deltaTreasury . _irwd $ ds, iRTreasury $ _irwd ds)
-              credCoinMap' = Map.map (\(DeltaCoin x) -> Coin x) credCoinMap
-              combinedMap = Map.unionWith (<>) credCoinMap' instantaneousRewards
-              requiredForRewards = fold combinedMap
-              available = potAmount `addDeltaCoin` delta
+-- | TODO: move this somewhere else.
+--   These are the MIR-related constructors that
+--   were removed from 'DelegPredicateFailure'.
+data DelegMirPredicateFailure era
+  = InsufficientForInstantaneousRewardsDELEG
+      !MIRPot -- which pot the rewards are to be drawn from, treasury or reserves
+      !Coin -- amount of rewards to be given out
+      !Coin -- size of the pot from which the lovelace is drawn
+  | MIRCertificateTooLateinEpochDELEG
+      !SlotNo -- current slot
+      !SlotNo -- Core.EraRule "MIR" must be submitted before this slot
+  | MIRTransferNotCurrentlyAllowed
+  | MIRNegativesNotCurrentlyAllowed
+  | InsufficientForTransferDELEG
+      !MIRPot -- which pot the rewards are to be drawn from, treasury or reserves
+      !Coin -- amount attempted to transfer
+      !Coin -- amount available
+  | MIRProducesNegativeUpdate
+  deriving (Show, Eq, Generic)
 
-          all (>= mempty) combinedMap ?! MIRProducesNegativeUpdate
+-- | TODO: move this somewhere else.
+--   This handles the MIR-related stuff that was removed from 'delegationTransition'
+handleMIR (DelegEnv slot ptr acnt pp) ds targetPot (StakeAddressesMIR credCoinMap) =
+    if HardForks.allowMIRTransfer pp
+      then do
+        sp <- liftSTS $ asks stabilityWindow
+        firstSlot <- liftSTS $ do
+          ei <- asks epochInfo
+          EpochNo currEpoch <- epochInfoEpoch ei slot
+          epochInfoFirst ei $ EpochNo (currEpoch + 1)
+        let tooLate = firstSlot *- Duration sp
+        slot < tooLate
+          ?! MIRCertificateTooLateinEpochDELEG slot tooLate
 
-          requiredForRewards <= available
-            ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards available
+        let (potAmount, delta, instantaneousRewards) =
+              case targetPot of
+                ReservesMIR -> (_reserves acnt, deltaReserves . _irwd $ ds, iRReserves $ _irwd ds)
+                TreasuryMIR -> (_treasury acnt, deltaTreasury . _irwd $ ds, iRTreasury $ _irwd ds)
+            credCoinMap' = Map.map (\(DeltaCoin x) -> Coin x) credCoinMap
+            combinedMap = Map.unionWith (<>) credCoinMap' instantaneousRewards
+            requiredForRewards = fold combinedMap
+            available = potAmount `addDeltaCoin` delta
 
-          case targetPot of
-            ReservesMIR -> pure $ ds {_irwd = (_irwd ds) {iRReserves = combinedMap}}
-            TreasuryMIR -> pure $ ds {_irwd = (_irwd ds) {iRTreasury = combinedMap}}
-        else do
-          sp <- liftSTS $ asks stabilityWindow
-          firstSlot <- liftSTS $ do
-            ei <- asks epochInfo
-            EpochNo currEpoch <- epochInfoEpoch ei slot
-            epochInfoFirst ei $ EpochNo (currEpoch + 1)
-          let tooLate = firstSlot *- Duration sp
-          slot < tooLate
-            ?! MIRCertificateTooLateinEpochDELEG slot tooLate
+        all (>= mempty) combinedMap ?! MIRProducesNegativeUpdate
 
-          all (>= mempty) credCoinMap ?! MIRNegativesNotCurrentlyAllowed
+        requiredForRewards <= available
+          ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards available
 
-          let (potAmount, instantaneousRewards) =
-                case targetPot of
-                  ReservesMIR -> (_reserves acnt, iRReserves $ _irwd ds)
-                  TreasuryMIR -> (_treasury acnt, iRTreasury $ _irwd ds)
-          let credCoinMap' = Map.map (\(DeltaCoin x) -> Coin x) credCoinMap
-              combinedMap = Map.union credCoinMap' instantaneousRewards
-              requiredForRewards = fold combinedMap
-          requiredForRewards <= potAmount
-            ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards potAmount
+        case targetPot of
+          ReservesMIR -> pure $ ds {_irwd = (_irwd ds) {iRReserves = combinedMap}}
+          TreasuryMIR -> pure $ ds {_irwd = (_irwd ds) {iRTreasury = combinedMap}}
+      else do
+        sp <- liftSTS $ asks stabilityWindow
+        firstSlot <- liftSTS $ do
+          ei <- asks epochInfo
+          EpochNo currEpoch <- epochInfoEpoch ei slot
+          epochInfoFirst ei $ EpochNo (currEpoch + 1)
+        let tooLate = firstSlot *- Duration sp
+        slot < tooLate
+          ?! MIRCertificateTooLateinEpochDELEG slot tooLate
 
-          case targetPot of
-            ReservesMIR -> pure $ ds {_irwd = (_irwd ds) {iRReserves = combinedMap}}
-            TreasuryMIR -> pure $ ds {_irwd = (_irwd ds) {iRTreasury = combinedMap}}
-    DCertMir (MIRCert targetPot (SendToOppositePotMIR coin)) ->
+        all (>= mempty) credCoinMap ?! MIRNegativesNotCurrentlyAllowed
+
+        let (potAmount, instantaneousRewards) =
+              case targetPot of
+                ReservesMIR -> (_reserves acnt, iRReserves $ _irwd ds)
+                TreasuryMIR -> (_treasury acnt, iRTreasury $ _irwd ds)
+        let credCoinMap' = Map.map (\(DeltaCoin x) -> Coin x) credCoinMap
+            combinedMap = Map.union credCoinMap' instantaneousRewards
+            requiredForRewards = fold combinedMap
+        requiredForRewards <= potAmount
+          ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards potAmount
+
+        case targetPot of
+          ReservesMIR -> pure $ ds {_irwd = (_irwd ds) {iRReserves = combinedMap}}
+          TreasuryMIR -> pure $ ds {_irwd = (_irwd ds) {iRTreasury = combinedMap}}
+handleMIR (DelegEnv slot ptr acnt pp) ds targetPot (SendToOppositePotMIR coin) =
       if HardForks.allowMIRTransfer pp
         then do
           sp <- liftSTS $ asks stabilityWindow
@@ -410,6 +349,3 @@ delegationTransition = do
         else do
           failBecause MIRTransferNotCurrentlyAllowed
           pure ds
-    DCertPool _ -> do
-      failBecause WrongCertificateTypeDELEG -- this always fails
-      pure ds
