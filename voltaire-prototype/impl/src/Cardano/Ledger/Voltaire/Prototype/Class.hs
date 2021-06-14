@@ -71,6 +71,8 @@ class
   , NoThunks (ProposalId era)
   , Eq (PpupState era)
   , Show (PpupState era)
+  , Eq (DelegPredicateFailure era)
+  , Show (DelegPredicateFailure era)
   ) =>
   VoltaireClass era where
     -- | The proposal header holds metadata relevant to the governance rules
@@ -98,12 +100,18 @@ class
     -- In Voltaire governance, one possible ProposalId is a pointer to a
     -- submitted proposal that has been recorded in a transaction.
     type ProposalId era :: Type
-    --
+    -- PPUP
     type PpupEnv era :: Type
     type PpupState era :: Type
     type PpupPredicateFailure era :: Type
+    -- DELEG
+    type DelegEnv era :: Type
+    type DelegState era :: Type
+    type DelegSignal era :: Type
+    type DelegPredicateFailure era :: Type
     fromUtxoEnv :: Shelley.UtxoEnv era -> PpupEnv era
     ppupTransition :: TransitionRule (PPUP era)
+    delegationTransition :: TransitionRule (DELEG era)
     submissionsWitnesses :: Shelley.UtxoEnv era -> Submissions era -> Set (KeyHash 'Witness (Crypto era))
 
 -- | A proposal is its body which describes what the proposed change is paired
@@ -235,6 +243,23 @@ instance
     type PredicateFailure (PPUP era) = PpupPredicateFailure era
     initialRules = []
     transitionRules = [ppupTransition]
+
+-- STS for Voltaire
+data DELEG era
+
+instance
+  ( Typeable era,
+    VoltaireClass era
+  ) =>
+  STS (DELEG era)
+  where
+  type State (DELEG era) = DelegState era
+  type Signal (DELEG era) = DelegSignal era
+  type Environment (DELEG era) = DelegEnv era
+  type BaseM (DELEG era) = ShelleyBase
+  type PredicateFailure (DELEG era) = DelegPredicateFailure era
+  initialRules = []
+  transitionRules = [delegationTransition]
 
 ppProposal :: VoltaireClass era => Proposal era -> PDoc
 ppProposal (Proposal h b) = ppSexp "Proposal"

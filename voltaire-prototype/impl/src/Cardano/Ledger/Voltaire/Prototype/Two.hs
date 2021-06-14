@@ -31,7 +31,6 @@ import Shelley.Spec.Ledger.PParams (ProtVer)
 import qualified Shelley.Spec.Ledger.TxBody as Shelley
 import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv(..))
 import Cardano.Prelude (Generic, Map)
--- LOL
 import Cardano.Binary
   ( FromCBOR (..),
     ToCBOR (..),
@@ -44,7 +43,8 @@ import Control.Monad.Reader.Class
 import Control.SetAlgebra (dom, eval, (⊆), (⨃))
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
--- LOL
+import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley -- TMP
+import qualified Shelley.Spec.Ledger.LedgerState as Shelley -- TMP
 
 -- The second prototype implements the Shelley PPUP rules and MIRs.
 data ProposalBody era
@@ -96,9 +96,6 @@ bodyPParamsDelta _ = Nothing
 -- identically. We mimic that behavior here.
 type ProposalId era = ProposalBody era
 
-type PpupEnv era = Shelley.PPUPEnv era
-type PpupState era = UpdateState era
-
 data UpdateState era = UpdateState
   { proposals :: !(ProposedUpdates era),
     futureProposals :: !(ProposedUpdates era)
@@ -149,50 +146,8 @@ instance
   where
   fromCBOR = error "TODO"
 
-fromUtxoEnv :: UtxoEnv era -> PpupEnv era
+fromUtxoEnv :: UtxoEnv era -> One.PpupEnv era
 fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
-
--- ppupT' ::
---   ( Typeable era,
---     Voltaire.VoltaireClass era,
---     Voltaire.ProposalHeader era ~ One.ProposalHeader era,
---     Voltaire.ProposalBody era ~ ProposalBody era,
---     Voltaire.PpupPredicateFailure era ~ One.PpupPredicateFailure era,
---     Voltaire.PpupState era ~ PpupState era,
---     Voltaire.PpupEnv era ~ PpupEnv era,
---     HasField "_protocolVersion" (Core.PParams era) ProtVer,
---     HasField "_protocolVersion" (Shelley.PParamsDelta era) (StrictMaybe ProtVer)
---   ) =>
---   TransitionRule (Voltaire.PPUP era)
--- ppupT' = do
---   TRC (ppupEnv, ppupState, upM) <- judgmentContext
---   case upM of
---     Nothing -> pure ppupState
---     Just (Update (Submissions ps) (Votes vs)) -> do
---       -- Shelley does not have a notion of voting as distinct from submissions.
---       -- Genesis key delegates reach a quorum by submitting identical proposals.
---       Map.null vs ?! One.UnsupportedVotesPPUP (Votes vs)
-
---       case ps of
---         Seq.Empty -> pure ppupState
---         Proposal (One.ProposalHeader _ te) _ :<| _ -> do
---           consistentHeaders te (fmap (\(Proposal h _) -> h) ps)
---           -- Handle PPUPs
---           let ppupProposal (Proposal h (BodyPPUP ppup)) = Just (h, ppup)
---               ppupProposal (Proposal _ (BodyMIR _)) = Nothing
---           ppupState' <- handlePpup ppupEnv ppupState (Seq.fromList . catMaybes $ map ppupProposal (toList ps))
---           -- Handle MIRs
---           error "TODO"
---           pure ppupState'
---  where
---   handlePpup a b c = undefined
---   -- "combineProposals" copy/pasted from One
---   consistentHeaders te proposalHeaders = do
---     let consistentHeader m (One.ProposalHeader submitter targetEpoch) = do
---           targetEpoch == te ?! One.VaryingTargetEpochPPUP te targetEpoch
---           not (Map.member submitter m) ?! One.MultipleProposalsPPUP submitter
---           pure (Map.insert submitter () m)
---     foldM_ consistentHeader Map.empty proposalHeaders
 
 ppupTransition ::
   ( Typeable era,
@@ -200,8 +155,8 @@ ppupTransition ::
     Voltaire.ProposalHeader era ~ One.ProposalHeader era,
     Voltaire.ProposalBody era ~ ProposalBody era,
     Voltaire.PpupPredicateFailure era ~ One.PpupPredicateFailure era,
-    Voltaire.PpupState era ~ PpupState era,
-    Voltaire.PpupEnv era ~ PpupEnv era,
+    Voltaire.PpupState era ~ UpdateState era,
+    Voltaire.PpupEnv era ~ One.PpupEnv era,
     HasField "_protocolVersion" (Core.PParams era) ProtVer,
     HasField "_protocolVersion" (Shelley.PParamsDelta era) (StrictMaybe ProtVer)
   ) =>
@@ -273,3 +228,10 @@ ppupTransition = do
                 UpdateState
                   (ProposedUpdates pupS)
                   (ProposedUpdates (eval (fpupS ⨃ pup)))
+
+type DelegState = Shelley.DState
+type DelegSignal = Shelley.DCert
+type DelegEnv = Shelley.DelegEnv
+type DelegPredicateFailure = Shelley.DelegPredicateFailure
+delegationTransition :: TransitionRule (Voltaire.DELEG era)
+delegationTransition = error "TODO: copy/paste Shelley.Spec.Ledger.STS.Deleg.delegationTransition"
