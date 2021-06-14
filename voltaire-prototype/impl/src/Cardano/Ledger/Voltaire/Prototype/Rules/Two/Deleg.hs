@@ -48,8 +48,7 @@ import Shelley.Spec.Ledger.Keys
     VerKeyVRF,
   )
 import Shelley.Spec.Ledger.LedgerState
-  ( AccountState (..),
-    DState,
+  ( DState,
     FutureGenDeleg (..),
     _delegations,
     _fGenDelegs,
@@ -86,7 +85,6 @@ data DELEG era
 data DelegEnv era = DelegEnv
   { slotNo :: SlotNo,
     ptr_ :: Ptr,
-    acnt_ :: AccountState,
     ppDE :: Core.PParams era -- The protocol parameters are only used for the HardFork mechanism
   }
 
@@ -156,7 +154,7 @@ delegationTransition ::
   ) =>
   TransitionRule (DELEG era)
 delegationTransition = do
-  TRC (DelegEnv slot ptr acnt pp, ds, c) <- judgmentContext
+  TRC (DelegEnv slot ptr pp, ds, c) <- judgmentContext
   case c of
     DCertDeleg (RegKey hk) -> do
       eval (hk ∉ dom (_rewards ds)) ?! StakeKeyAlreadyRegisteredDELEG hk
