@@ -194,85 +194,68 @@ ppupTransition ::
   TransitionRule (Voltaire.PPUP era)
 ppupTransition = do
   TRC
-    ( ppupEnv,
-      ppupState,
+    ( Shelley.PPUPEnv slot pp (GenDelegs _genDelegs),
+      Shelley.PPUPState (Shelley.ProposedPPUpdates pupS) (Shelley.ProposedPPUpdates fpupS),
       upM
       ) <-
     judgmentContext
   case upM of
-    Nothing -> pure ppupState
+    Nothing -> pure $ Shelley.PPUPState (Shelley.ProposedPPUpdates pupS) (Shelley.ProposedPPUpdates fpupS)
     Just (Update (Submissions ps) (Votes vs)) -> do
       -- Shelley does not have a notion of voting as distinct from submissions.
       -- Genesis key delegates reach a quorum by submitting identical proposals.
       Map.null vs ?! UnsupportedVotesPPUP (Votes vs)
-      handlePpup ppupEnv ppupState (fmap (\(Proposal h b) -> (h, b)) ps)
+      case ps of
+        Seq.Empty -> pure $ Shelley.PPUPState (Shelley.ProposedPPUpdates pupS) (Shelley.ProposedPPUpdates fpupS)
+      -- Here we have an impedance mismatch between the structure of proposal
+      -- submission in Voltaire and in Shelley. In Shelley, a genesis key delegate
+      -- can only submit one proposal per transaction in a map structure.
+      -- In Voltaire, a submitter can submit as many proposals as they can fit in
+      -- the transaction, and proposals are ordered within a transaction.
+      --
+      -- There is another mismatch in that the target epoch is uniform for all
+      -- proposals submitted within a Shelley transaction, whereas the target can
+      -- be freely set for Voltaire proposals.
+      --
+      -- We reconcile this situation by folding over the sequence of Voltaire
+      -- proposals and fail if multiple proposals correspond to the same submitter
+      -- or the target epoch is not uniform across all proposals.
+        Proposal (ProposalHeader s0 te) d0 :<| ps' -> do
+          let combineProposals m (Proposal (ProposalHeader submitter targetEpoch) paramUpdate) = do
+                targetEpoch == te ?! VaryingTargetEpochPPUP te targetEpoch
+                not (Map.member submitter m) ?! MultipleProposalsPPUP submitter
+                pure (Map.insert submitter paramUpdate m)
+          pup <- foldM combineProposals (Map.singleton s0 d0) ps'
+          -- The rest of the logic after this reconciliation step is the same as Shelley
+          eval (dom pup ⊆ dom _genDelegs) ?! NonGenesisUpdatePPUP (eval (dom pup)) (eval (dom _genDelegs))
+          let goodPV =
+                pvCanFollow (getField @"_protocolVersion" pp)
+                  . getField @"_protocolVersion"
+          let badPVs = Map.filter (not . goodPV) pup
+          case Map.toList (Map.map (getField @"_protocolVersion") badPVs) of
+            ((_, SJust pv) : _) -> failBecause $ PVCannotFollowPPUP pv
+            _ -> pure ()
+          sp <- liftSTS $ asks stabilityWindow
+          firstSlotNextEpoch <- liftSTS $ do
+            ei <- asks epochInfo
+            EpochNo e <- epochInfoEpoch ei slot
+            epochInfoFirst ei (EpochNo $ e + 1)
+          let tooLate = firstSlotNextEpoch *- (Duration (2 * sp))
 
--- | Handle a protocol parameter update
-handlePpup ::
-  ( Typeable era,
-    Voltaire.VoltaireClass era,
-    Voltaire.PpupPredicateFailure era ~ PpupPredicateFailure era,
-    Voltaire.PpupState era ~ PpupState era,
-    HasField "_protocolVersion" (Core.PParams era) ProtVer,
-    HasField "_protocolVersion" (Shelley.PParamsDelta era) (StrictMaybe ProtVer)
-  )
-  => Shelley.PPUPEnv era
-  -> Shelley.PPUPState era
-  -> StrictSeq (ProposalHeader era, Shelley.PParamsDelta era)
-  -> TransitionRule (Voltaire.PPUP era)
-handlePpup _ ppupState Seq.Empty = pure ppupState
-handlePpup
-  (Shelley.PPUPEnv slot pp (GenDelegs _genDelegs))
-  (Shelley.PPUPState (Shelley.ProposedPPUpdates pupS) (Shelley.ProposedPPUpdates fpupS))
-  ((ProposalHeader s0 te, d0) :<| ps') = do
-  -- Here we have an impedance mismatch between the structure of proposal
-  -- submission in Voltaire and in Shelley. In Shelley, a genesis key delegate
-  -- can only submit one proposal per transaction in a map structure.
-  -- In Voltaire, a submitter can submit as many proposals as they can fit in
-  -- the transaction, and proposals are ordered within a transaction.
-  --
-  -- There is another mismatch in that the target epoch is uniform for all
-  -- proposals submitted within a Shelley transaction, whereas the target can
-  -- be freely set for Voltaire proposals.
-  --
-  -- We reconcile this situation by folding over the sequence of Voltaire
-  -- proposals and fail if multiple proposals correspond to the same submitter
-  -- or the target epoch is not uniform across all proposals.
-  let combineProposals m (ProposalHeader submitter targetEpoch, paramUpdate) = do
-        targetEpoch == te ?! VaryingTargetEpochPPUP te targetEpoch
-        not (Map.member submitter m) ?! MultipleProposalsPPUP submitter
-        pure (Map.insert submitter paramUpdate m)
-  pup <- foldM combineProposals (Map.singleton s0 d0) ps'
-  -- The rest of the logic after this reconciliation step is the same as Shelley
-  eval (dom pup ⊆ dom _genDelegs) ?! NonGenesisUpdatePPUP (eval (dom pup)) (eval (dom _genDelegs))
-  let goodPV =
-        pvCanFollow (getField @"_protocolVersion" pp)
-          . getField @"_protocolVersion"
-  let badPVs = Map.filter (not . goodPV) pup
-  case Map.toList (Map.map (getField @"_protocolVersion") badPVs) of
-    ((_, SJust pv) : _) -> failBecause $ PVCannotFollowPPUP pv
-    _ -> pure ()
-  sp <- liftSTS $ asks stabilityWindow
-  firstSlotNextEpoch <- liftSTS $ do
-    ei <- asks epochInfo
-    EpochNo e <- epochInfoEpoch ei slot
-    epochInfoFirst ei (EpochNo $ e + 1)
-  let tooLate = firstSlotNextEpoch *- (Duration (2 * sp))
+          currentEpoch <- liftSTS $ do
+            ei <- asks epochInfo
+            epochInfoEpoch ei slot
 
-  currentEpoch <- liftSTS $ do
-    ei <- asks epochInfo
-    epochInfoEpoch ei slot
-
-  if slot < tooLate
-    then do
-      currentEpoch == te ?! PPUpdateWrongEpoch currentEpoch te VoteForThisEpoch
-      pure $
-        Shelley.PPUPState
-          (Shelley.ProposedPPUpdates (eval (pupS ⨃ pup)))
-          (Shelley.ProposedPPUpdates fpupS)
-    else do
-      currentEpoch + 1 == te ?! PPUpdateWrongEpoch currentEpoch te VoteForNextEpoch
-      pure $
-        Shelley.PPUPState
-          (Shelley.ProposedPPUpdates pupS)
-          (Shelley.ProposedPPUpdates (eval (fpupS ⨃ pup)))
+          if slot < tooLate
+            then do
+              currentEpoch == te ?! PPUpdateWrongEpoch currentEpoch te VoteForThisEpoch
+              pure $
+                Shelley.PPUPState
+                  (Shelley.ProposedPPUpdates (eval (pupS ⨃ pup)))
+                  (Shelley.ProposedPPUpdates fpupS)
+            else do
+              currentEpoch + 1 == te ?! PPUpdateWrongEpoch currentEpoch te VoteForNextEpoch
+              pure $
+                Shelley.PPUPState
+                  (Shelley.ProposedPPUpdates pupS)
+                  (Shelley.ProposedPPUpdates (eval (fpupS ⨃ pup)))
