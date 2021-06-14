@@ -68,5 +68,6 @@ library
     small-steps,
     strict-containers,
     -- text,
-    transformers
+    transformers,
+    groups
   hs-source-dirs: src

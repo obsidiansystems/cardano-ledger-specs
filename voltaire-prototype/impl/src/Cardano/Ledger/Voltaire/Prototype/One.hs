@@ -46,10 +46,8 @@ import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
 import qualified Shelley.Spec.Ledger.LedgerState as Shelley
 import Shelley.Spec.Ledger.Slot
 import qualified Shelley.Spec.Ledger.STS.Ppup as Shelley
-import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley
 import Shelley.Spec.Ledger.PParams (ProtVer)
 import qualified Shelley.Spec.Ledger.PParams as Shelley
-import qualified Shelley.Spec.Ledger.TxBody as Shelley
 import Shelley.Spec.Ledger.Serialization (decodeRecordSum)
 import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv(..))
 
@@ -261,11 +259,3 @@ ppupTransition = do
                 Shelley.PPUPState
                   (Shelley.ProposedPPUpdates pupS)
                   (Shelley.ProposedPPUpdates (eval (fpupS ⨃ pup)))
-
--- Same as Shelley
-type DelegState = Shelley.DState
-type DelegSignal = Shelley.DCert
-type DelegEnv = Shelley.DelegEnv
-type DelegPredicateFailure = Shelley.DelegPredicateFailure
-delegationTransition :: TransitionRule (Voltaire.DELEG era)
-delegationTransition = error "TODO: copy/paste Shelley.Spec.Ledger.STS.Deleg.delegationTransition"

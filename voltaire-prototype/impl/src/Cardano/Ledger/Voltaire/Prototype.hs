@@ -42,6 +42,7 @@ import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import qualified Cardano.Ledger.Voltaire.Prototype.Two as Two
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg as Two
 import Control.DeepSeq (deepseq)
 import Control.SetAlgebra (eval, (◁))
 import Data.Default.Class (def, Default)
@@ -98,17 +99,8 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     = One.PpupState (VoltairePrototypeEra 'VoltairePrototype_One c)
   type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
     = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type DelegEnv (VoltairePrototypeEra 'VoltairePrototype_One c)
-    = One.DelegEnv (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type DelegState (VoltairePrototypeEra 'VoltairePrototype_One c)
-    = One.DelegState (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type DelegSignal (VoltairePrototypeEra 'VoltairePrototype_One c)
-    = One.DelegSignal (VoltairePrototypeEra 'VoltairePrototype_One c)
-  type DelegPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
-    = One.DelegPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_One c)
   fromUtxoEnv = One.fromUtxoEnv
   ppupTransition = One.ppupTransition
-  delegationTransition = One.delegationTransition
   submissionsWitnesses (Shelley.UtxoEnv _ _ _ (Shelley.GenDelegs genDelegs)) submissions =
     Set.map asWitness . Set.fromList $ Map.elems updateKeys
    where
@@ -138,17 +130,8 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     = Two.UpdateState (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
-  type DelegEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = Two.DelegEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
-  type DelegState (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = Two.DelegState (VoltairePrototypeEra 'VoltairePrototype_Two c)
-  type DelegSignal (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = Two.DelegSignal (VoltairePrototypeEra 'VoltairePrototype_Two c)
-  type DelegPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = Two.DelegPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
   fromUtxoEnv = One.fromUtxoEnv
   ppupTransition = Two.ppupTransition
-  delegationTransition = Two.delegationTransition
   -- NB: identical to that of VoltairePrototype_One
   submissionsWitnesses (Shelley.UtxoEnv _ _ _ (Shelley.GenDelegs genDelegs)) submissions =
     Set.map asWitness . Set.fromList $ Map.elems updateKeys
@@ -291,7 +274,7 @@ instance
 
 type instance Core.EraRule "BBODY" (VoltairePrototypeEra proto c) = Shelley.BBODY (VoltairePrototypeEra proto c)
 
-type instance Core.EraRule "DELEG" (VoltairePrototypeEra proto c) = Shelley.DELEG (VoltairePrototypeEra proto c)
+type instance Core.EraRule "DELEG" (VoltairePrototypeEra 'VoltairePrototype_One c) = Shelley.DELEG (VoltairePrototypeEra 'VoltairePrototype_One c)
 
 type instance Core.EraRule "DELEGS" (VoltairePrototypeEra proto c) = Shelley.DELEGS (VoltairePrototypeEra proto c)
 
@@ -330,6 +313,9 @@ type instance Core.EraRule "TICKN" (VoltairePrototypeEra proto _c) = Shelley.TIC
 type instance Core.EraRule "UPEC" (VoltairePrototypeEra proto c) = Shelley.UPEC (VoltairePrototypeEra proto c)
 
 -- These rules are defined anew in the voltaire prototype eras
+
+type instance Core.EraRule "DELEG" (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  = Two.DELEG (VoltairePrototypeEra 'VoltairePrototype_Two c)
 
 type instance Core.EraRule "UTXO" (VoltairePrototypeEra proto c) = UTXO (VoltairePrototypeEra proto c)
 

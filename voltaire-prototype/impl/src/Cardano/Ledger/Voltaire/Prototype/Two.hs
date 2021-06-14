@@ -210,10 +210,3 @@ ppupTransition = do
                 UpdateState
                   (ProposedUpdates pupS)
                   (ProposedUpdates (eval (fpupS ⨃ pup)))
-
-type DelegState = Shelley.DState
-type DelegSignal = Shelley.DCert
-type DelegEnv = Shelley.DelegEnv
-type DelegPredicateFailure = Shelley.DelegPredicateFailure
-delegationTransition :: TransitionRule (Voltaire.DELEG era)
-delegationTransition = error "TODO: copy/paste Shelley.Spec.Ledger.STS.Deleg.delegationTransition"
