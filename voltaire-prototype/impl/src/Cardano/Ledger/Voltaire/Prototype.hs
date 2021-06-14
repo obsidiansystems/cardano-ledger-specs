@@ -41,6 +41,7 @@ import Cardano.Ledger.Voltaire.Prototype.Rules.Utxo (UTXO)
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
+import qualified Cardano.Ledger.Voltaire.Prototype.Two as Two
 import Control.DeepSeq (deepseq)
 import Control.SetAlgebra (eval, (◁))
 import Data.Default.Class (def, Default)
@@ -72,13 +73,18 @@ import qualified Shelley.Spec.Ledger.STS.Upec as Shelley
 import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet, segwitTx)
 import Shelley.Spec.Ledger.Keys (asWitness)
 
-data VoltairePrototype = VoltairePrototype_One
+data VoltairePrototype
+  = VoltairePrototype_One
+  | VoltairePrototype_Two
 
 data VoltairePrototypeEra (proto :: VoltairePrototype) c
 
 --------------------------------------------------------------------------------
 -- Voltaire instances
 --------------------------------------------------------------------------------
+
+-- One
+
 instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'VoltairePrototype_One c) where
   type ProposalHeader (VoltairePrototypeEra 'VoltairePrototype_One c)
     = One.ProposalHeader (VoltairePrototypeEra 'VoltairePrototype_One c)
@@ -107,6 +113,38 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     submissionSeq (Submissions seq') = seq'
 
 type instance PreviousEra (VoltairePrototypeEra 'VoltairePrototype_One c) = ShelleyEra c
+
+-- Two
+
+instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'VoltairePrototype_Two c) where
+  type ProposalHeader (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = One.ProposalHeader (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  type ProposalBody (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.ProposalBody (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  type ProposalId (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.ProposalId (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  type PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  type PpupState (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.PpupState (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  fromUtxoEnv = One.fromUtxoEnv
+  ppupTransition = Two.ppupTransition
+  submissionsWitnesses (Shelley.UtxoEnv _ _ _ (Shelley.GenDelegs genDelegs)) submissions =
+    Set.map asWitness . Set.fromList $ Map.elems updateKeys
+   where
+    submissionsKeys =
+        Set.fromList
+      . fmap (One.proposal_submitter . proposalHeader)
+      . toList
+      . submissionSeq
+    updateKeys' = eval (submissionsKeys submissions ◁ genDelegs)
+    updateKeys = Map.map Shelley.genDelegKeyHash updateKeys'
+    submissionSeq (Submissions seq') = seq'
+
+type instance PreviousEra (VoltairePrototypeEra 'VoltairePrototype_Two c) =
+  VoltairePrototypeEra 'VoltairePrototype_One c
 
 --------------------------------------------------------------------------------
 -- Era and Shelley instances
@@ -283,12 +321,12 @@ type instance Core.EraRule "UTXOW" (VoltairePrototypeEra proto c) = UTXOW (Volta
 -- from the protocol parameter update scheme of pre-Voltaire Shelley.
 type instance Core.EraRule "PPUP" (VoltairePrototypeEra proto c) = PPUP (VoltairePrototypeEra proto c)
 
-instance 
+instance
   ( CryptoClass.Crypto c,
     Default (Shelley.State (Core.EraRule "PPUP" (VoltairePrototypeEra proto c))),
     VoltaireClass (VoltairePrototypeEra proto c),
     Typeable proto
-  ) => 
+  ) =>
   Shelley.CanStartFromGenesis (VoltairePrototypeEra proto c) where
   initialState sg () =
     Shelley.NewEpochState
