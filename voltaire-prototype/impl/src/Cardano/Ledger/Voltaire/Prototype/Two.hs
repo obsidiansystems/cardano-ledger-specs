@@ -17,7 +17,6 @@ import Cardano.Ledger.Voltaire.Prototype.Class (Proposal(..), Votes(..), Submiss
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import qualified Cardano.Ledger.Voltaire.Prototype.Class as Voltaire
 import qualified Cardano.Ledger.Shelley.Constraints as Shelley (UsesPParams (PParamsDelta))
-import Control.Monad (foldM_)
 import Control.State.Transition
 import qualified Data.Map.Strict as Map
 import Data.Sequence.Strict (StrictSeq((:<|)))
@@ -27,56 +26,24 @@ import GHC.Records
 import Shelley.Spec.Ledger.BaseTypes
 import Shelley.Spec.Ledger.Keys
 import Shelley.Spec.Ledger.Slot
-import qualified Shelley.Spec.Ledger.LedgerState as Shelley
 import qualified Shelley.Spec.Ledger.STS.Ppup as Shelley
 import Shelley.Spec.Ledger.PParams (ProtVer)
 import qualified Shelley.Spec.Ledger.TxBody as Shelley
 import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv(..))
-import Data.Foldable (toList)
-import Cardano.Prelude (catMaybes, Generic, Map, asks)
+import Cardano.Prelude (Generic, Map)
 -- LOL
 import Cardano.Binary
   ( FromCBOR (..),
     ToCBOR (..),
-    encodeListLen,
-    decodeWord,
   )
 
-import qualified Cardano.Ledger.Core as Core
-import Cardano.Ledger.Era (Crypto, Era)
-import Cardano.Ledger.Voltaire.Prototype.Class (Proposal(..), Votes(..), Submissions(..), Update(..))
-import qualified Cardano.Ledger.Voltaire.Prototype.Class as Voltaire
-import qualified Cardano.Ledger.Shelley.Constraints as Shelley (UsesPParams (PParamsDelta))
 import Control.DeepSeq (NFData)
 import Cardano.Ledger.Pretty
 import Control.Monad (foldM)
 import Control.Monad.Reader.Class
 import Control.SetAlgebra (dom, eval, (⊆), (⨃))
-import Control.State.Transition
-import Data.Coders
-  ( Decode (From, RecD),
-    decode,
-    (<!),
-  )
-import qualified Data.Map.Strict as Map
-import Data.Sequence.Strict (StrictSeq((:<|)))
-import qualified Data.Sequence.Strict as Seq
-import Data.Set (Set)
-import Data.Typeable (Typeable)
-import Data.Word (Word8)
-import GHC.Generics (Generic)
-import GHC.Records
 import NoThunks.Class (NoThunks (..))
-import Shelley.Spec.Ledger.BaseTypes
-import Shelley.Spec.Ledger.Keys
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
-import qualified Shelley.Spec.Ledger.LedgerState as Shelley
-import Shelley.Spec.Ledger.Slot
-import qualified Shelley.Spec.Ledger.STS.Ppup as Shelley
-import Shelley.Spec.Ledger.PParams (ProtVer)
-import qualified Shelley.Spec.Ledger.PParams as Shelley
-import Shelley.Spec.Ledger.Serialization (decodeRecordSum)
-import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv(..))
 -- LOL
 
 -- The second prototype implements the Shelley PPUP rules and MIRs.
