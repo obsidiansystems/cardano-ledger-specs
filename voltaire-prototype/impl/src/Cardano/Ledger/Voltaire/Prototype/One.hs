@@ -262,6 +262,7 @@ ppupTransition = do
                   (Shelley.ProposedPPUpdates pupS)
                   (Shelley.ProposedPPUpdates (eval (fpupS ⨃ pup)))
 
+-- Same as Shelley
 type DelegState = Shelley.DState
 type DelegSignal = Shelley.DCert
 type DelegEnv = Shelley.DelegEnv

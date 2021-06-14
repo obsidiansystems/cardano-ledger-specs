@@ -149,6 +149,7 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
   fromUtxoEnv = One.fromUtxoEnv
   ppupTransition = Two.ppupTransition
   delegationTransition = Two.delegationTransition
+  -- NB: identical to that of VoltairePrototype_One
   submissionsWitnesses (Shelley.UtxoEnv _ _ _ (Shelley.GenDelegs genDelegs)) submissions =
     Set.map asWitness . Set.fromList $ Map.elems updateKeys
    where

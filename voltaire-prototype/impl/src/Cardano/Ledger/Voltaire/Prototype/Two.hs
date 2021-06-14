@@ -46,15 +46,16 @@ import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
 import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley -- TMP
 import qualified Shelley.Spec.Ledger.LedgerState as Shelley -- TMP
 
--- The second prototype implements the Shelley PPUP rules and MIRs.
+-- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
   = BodyPPUP (Shelley.PParamsDelta era)
+  -- | TODO: 'MIRCert' contains the info we need but should be renamed/moved to avoid confusion
   | BodyMIR (Shelley.MIRCert era)
     deriving (Generic)
 
 deriving instance Eq (Shelley.PParamsDelta era) => Eq (ProposalBody era)
 
--- | TODO: orphan
+-- | TODO: actually implement orphan (required because a ProposalId must be orderable)
 instance Ord (Shelley.MIRCert era) where
   compare = error "TODO"
 
@@ -79,14 +80,6 @@ instance
   where
   fromCBOR =
     error "TODO"
-
-isPPUPBody :: ProposalBody era -> Bool
-isPPUPBody (BodyPPUP _) = True
-isPPUPBody _ = False
-
-isMIRBody :: ProposalBody era -> Bool
-isMIRBody (BodyMIR _) = True
-isMIRBody _ = False
 
 bodyPParamsDelta :: ProposalBody era -> Maybe (Shelley.PParamsDelta era)
 bodyPParamsDelta (BodyPPUP pParams) = Just pParams
@@ -149,6 +142,10 @@ instance
 fromUtxoEnv :: UtxoEnv era -> One.PpupEnv era
 fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
 
+-- | Identical to Cardano.Ledger.Voltaire.Prototype.One.ppupTransition
+--   except for:
+--      * different 'ProposalBody'
+--      * different 'PpupState'
 ppupTransition ::
   ( Typeable era,
     Voltaire.VoltaireClass era,
@@ -171,24 +168,9 @@ ppupTransition = do
   case upM of
     Nothing -> pure updateState
     Just (Update (Submissions ps) (Votes vs)) -> do
-      -- Shelley does not have a notion of voting as distinct from submissions.
-      -- Genesis key delegates reach a quorum by submitting identical proposals.
       Map.null vs ?! One.UnsupportedVotesPPUP (Votes vs)
       case ps of
         Seq.Empty -> pure updateState
-      -- Here we have an impedance mismatch between the structure of proposal
-      -- submission in Voltaire and in Shelley. In Shelley, a genesis key delegate
-      -- can only submit one proposal per transaction in a map structure.
-      -- In Voltaire, a submitter can submit as many proposals as they can fit in
-      -- the transaction, and proposals are ordered within a transaction.
-      --
-      -- There is another mismatch in that the target epoch is uniform for all
-      -- proposals submitted within a Shelley transaction, whereas the target can
-      -- be freely set for Voltaire proposals.
-      --
-      -- We reconcile this situation by folding over the sequence of Voltaire
-      -- proposals and fail if multiple proposals correspond to the same submitter
-      -- or the target epoch is not uniform across all proposals.
         Proposal (One.ProposalHeader s0 te) d0 :<| ps' -> do
           let combineProposals m (Proposal (One.ProposalHeader submitter targetEpoch) paramUpdate) = do
                 targetEpoch == te ?! One.VaryingTargetEpochPPUP te targetEpoch
