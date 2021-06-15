@@ -31,7 +31,6 @@ import Shelley.Spec.Ledger.LedgerState
   ( AccountState (..),
     InstantaneousRewards (..),
     availableAfterMIR,
-    _irwd,
   )
 import Shelley.Spec.Ledger.Slot
   ( Duration (..),
@@ -67,7 +66,7 @@ data DelegMirPredicateFailure era
 
 -- | Handles the MIR-related stuff that was removed from
 -- 'Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg.delegationTransition'
-handleMIR (slot, acnt, pp) ds targetPot (StakeAddressesMIR credCoinMap) =
+handleMIR (slot, acnt, pp) irwd targetPot (StakeAddressesMIR credCoinMap) =
     if HardForks.allowMIRTransfer pp
       then do
         sp <- liftSTS $ asks stabilityWindow
@@ -81,8 +80,8 @@ handleMIR (slot, acnt, pp) ds targetPot (StakeAddressesMIR credCoinMap) =
 
         let (potAmount, delta, instantaneousRewards) =
               case targetPot of
-                ReservesMIR -> (_reserves acnt, deltaReserves . _irwd $ ds, iRReserves $ _irwd ds)
-                TreasuryMIR -> (_treasury acnt, deltaTreasury . _irwd $ ds, iRTreasury $ _irwd ds)
+                ReservesMIR -> (_reserves acnt, deltaReserves irwd, iRReserves irwd)
+                TreasuryMIR -> (_treasury acnt, deltaTreasury irwd, iRTreasury irwd)
             credCoinMap' = Map.map (\(DeltaCoin x) -> Coin x) credCoinMap
             combinedMap = Map.unionWith (<>) credCoinMap' instantaneousRewards
             requiredForRewards = fold combinedMap
@@ -94,8 +93,8 @@ handleMIR (slot, acnt, pp) ds targetPot (StakeAddressesMIR credCoinMap) =
           ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards available
 
         case targetPot of
-          ReservesMIR -> pure $ ds {_irwd = (_irwd ds) {iRReserves = combinedMap}}
-          TreasuryMIR -> pure $ ds {_irwd = (_irwd ds) {iRTreasury = combinedMap}}
+          ReservesMIR -> pure $ irwd {iRReserves = combinedMap}
+          TreasuryMIR -> pure $ irwd {iRTreasury = combinedMap}
       else do
         sp <- liftSTS $ asks stabilityWindow
         firstSlot <- liftSTS $ do
@@ -110,8 +109,8 @@ handleMIR (slot, acnt, pp) ds targetPot (StakeAddressesMIR credCoinMap) =
 
         let (potAmount, instantaneousRewards) =
               case targetPot of
-                ReservesMIR -> (_reserves acnt, iRReserves $ _irwd ds)
-                TreasuryMIR -> (_treasury acnt, iRTreasury $ _irwd ds)
+                ReservesMIR -> (_reserves acnt, iRReserves irwd)
+                TreasuryMIR -> (_treasury acnt, iRTreasury irwd)
         let credCoinMap' = Map.map (\(DeltaCoin x) -> Coin x) credCoinMap
             combinedMap = Map.union credCoinMap' instantaneousRewards
             requiredForRewards = fold combinedMap
@@ -119,9 +118,9 @@ handleMIR (slot, acnt, pp) ds targetPot (StakeAddressesMIR credCoinMap) =
           ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards potAmount
 
         case targetPot of
-          ReservesMIR -> pure $ ds {_irwd = (_irwd ds) {iRReserves = combinedMap}}
-          TreasuryMIR -> pure $ ds {_irwd = (_irwd ds) {iRTreasury = combinedMap}}
-handleMIR (slot, acnt, pp) ds targetPot (SendToOppositePotMIR coin) =
+          ReservesMIR -> pure $ irwd {iRReserves = combinedMap}
+          TreasuryMIR -> pure $ irwd {iRTreasury = combinedMap}
+handleMIR (slot, acnt, pp) irwd targetPot (SendToOppositePotMIR coin) =
       if HardForks.allowMIRTransfer pp
         then do
           sp <- liftSTS $ asks stabilityWindow
@@ -133,32 +132,25 @@ handleMIR (slot, acnt, pp) ds targetPot (SendToOppositePotMIR coin) =
           slot < tooLate
             ?! MIRCertificateTooLateinEpochDELEG slot tooLate
 
-          let available = availableAfterMIR targetPot acnt (_irwd ds)
+          let available = availableAfterMIR targetPot acnt irwd
           coin <= available
             ?! InsufficientForTransferDELEG targetPot coin available
 
-          let ir = _irwd ds
-              dr = deltaReserves ir
-              dt = deltaTreasury ir
+          let dr = deltaReserves irwd
+              dt = deltaTreasury irwd
           case targetPot of
             ReservesMIR ->
               pure $
-                ds
-                  { _irwd =
-                      ir
-                        { deltaReserves = dr <> (invert $ toDeltaCoin coin),
-                          deltaTreasury = dt <> (toDeltaCoin coin)
-                        }
+                irwd
+                  { deltaReserves = dr <> (invert $ toDeltaCoin coin),
+                      deltaTreasury = dt <> (toDeltaCoin coin)
                   }
             TreasuryMIR ->
               pure $
-                ds
-                  { _irwd =
-                      ir
-                        { deltaReserves = dr <> (toDeltaCoin coin),
-                          deltaTreasury = dt <> (invert $ toDeltaCoin coin)
-                        }
+                irwd
+                  { deltaReserves = dr <> (toDeltaCoin coin),
+                      deltaTreasury = dt <> (invert $ toDeltaCoin coin)
                   }
         else do
           failBecause MIRTransferNotCurrentlyAllowed
-          pure ds
+          pure irwd
