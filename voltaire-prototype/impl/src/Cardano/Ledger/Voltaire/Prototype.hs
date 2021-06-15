@@ -129,7 +129,7 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
   type PpupState (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = Two.PPUPState (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
   fromUtxoEnv = One.fromUtxoEnv
   ppupTransition = Two.ppupTransition
   -- NB: identical to that of VoltairePrototype_One

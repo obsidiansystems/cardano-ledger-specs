@@ -45,6 +45,7 @@ import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
 import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley -- TMP
 import qualified Shelley.Spec.Ledger.LedgerState as Shelley -- TMP
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
@@ -142,6 +143,11 @@ instance
 fromUtxoEnv :: UtxoEnv era -> One.PpupEnv era
 fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
 
+data PpupPredicateFailure era
+  = UpdatePPUPFailure (One.PpupPredicateFailure era)
+  | UpdateMIRFailure (Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir.DelegMirPredicateFailure era)
+    deriving (Eq, Show)
+
 -- | Identical to Cardano.Ledger.Voltaire.Prototype.One.ppupTransition
 --   except for:
 --      * different 'ProposalBody'
@@ -151,7 +157,7 @@ ppupTransition ::
     Voltaire.VoltaireClass era,
     Voltaire.ProposalHeader era ~ One.ProposalHeader era,
     Voltaire.ProposalBody era ~ ProposalBody era,
-    Voltaire.PpupPredicateFailure era ~ One.PpupPredicateFailure era,
+    Voltaire.PpupPredicateFailure era ~ PpupPredicateFailure era,
     Voltaire.PpupState era ~ PPUPState era,
     Voltaire.PpupEnv era ~ One.PpupEnv era,
     HasField "_protocolVersion" (Core.PParams era) ProtVer,
@@ -168,23 +174,23 @@ ppupTransition = do
   case upM of
     Nothing -> pure updateState
     Just (Update (Submissions ps) (Votes vs)) -> do
-      Map.null vs ?! One.UnsupportedVotesPPUP (Votes vs)
+      Map.null vs ?! ppupFail (One.UnsupportedVotesPPUP $ Votes vs)
       case ps of
         Seq.Empty -> pure updateState
         Proposal (One.ProposalHeader s0 te) d0 :<| ps' -> do
           let combineProposals m (Proposal (One.ProposalHeader submitter targetEpoch) paramUpdate) = do
-                targetEpoch == te ?! One.VaryingTargetEpochPPUP te targetEpoch
-                not (Map.member submitter m) ?! One.MultipleProposalsPPUP submitter
+                targetEpoch == te ?! ppupFail (One.VaryingTargetEpochPPUP te targetEpoch)
+                not (Map.member submitter m) ?! ppupFail (One.MultipleProposalsPPUP submitter)
                 pure (Map.insert submitter paramUpdate m)
           pup <- foldM combineProposals (Map.singleton s0 d0) ps'
           -- The rest of the logic after this reconciliation step is the same as Shelley
-          eval (dom pup ⊆ dom _genDelegs) ?! One.NonGenesisUpdatePPUP (eval (dom pup)) (eval (dom _genDelegs))
+          eval (dom pup ⊆ dom _genDelegs) ?! ppupFail (One.NonGenesisUpdatePPUP (eval (dom pup)) (eval (dom _genDelegs)))
           let goodPV =
                 pvCanFollow (getField @"_protocolVersion" pp)
                   . getField @"_protocolVersion"
           let badPVs = Map.filter (not . goodPV) (Map.mapMaybe bodyPParamsDelta pup)
           case Map.toList (Map.map (getField @"_protocolVersion") badPVs) of
-            ((_, SJust pv) : _) -> failBecause $ One.PVCannotFollowPPUP pv
+            ((_, SJust pv) : _) -> failBecause $ ppupFail $ One.PVCannotFollowPPUP pv
             _ -> pure ()
           sp <- liftSTS $ asks stabilityWindow
           firstSlotNextEpoch <- liftSTS $ do
@@ -199,14 +205,16 @@ ppupTransition = do
 
           if slot < tooLate
             then do
-              currentEpoch == te ?! One.PPUpdateWrongEpoch currentEpoch te One.VoteForThisEpoch
+              currentEpoch == te ?! ppupFail (One.PPUpdateWrongEpoch currentEpoch te One.VoteForThisEpoch)
               pure $
                 PPUPState
                   (ProposedUpdates (eval (pupS ⨃ pup)))
                   (ProposedUpdates fpupS)
             else do
-              currentEpoch + 1 == te ?! One.PPUpdateWrongEpoch currentEpoch te One.VoteForNextEpoch
+              currentEpoch + 1 == te ?! ppupFail (One.PPUpdateWrongEpoch currentEpoch te One.VoteForNextEpoch)
               pure $
                 PPUPState
                   (ProposedUpdates pupS)
                   (ProposedUpdates (eval (fpupS ⨃ pup)))
+ where
+  ppupFail = UpdatePPUPFailure
