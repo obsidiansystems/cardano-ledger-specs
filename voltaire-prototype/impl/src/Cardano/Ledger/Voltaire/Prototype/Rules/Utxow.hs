@@ -21,7 +21,7 @@ import Control.State.Transition.Extended
 import GHC.Records (HasField)
 import Shelley.Spec.Ledger.Address (Addr)
 import Shelley.Spec.Ledger.BaseTypes
-import Shelley.Spec.Ledger.LedgerState (UTxOState)
+import Shelley.Spec.Ledger.LedgerState (UTxOState, AccountState)
 import qualified Shelley.Spec.Ledger.STS.Ledger as Shelley
 import Shelley.Spec.Ledger.STS.Utxo (UtxoEnv)
 import Shelley.Spec.Ledger.STS.Utxow
@@ -50,7 +50,7 @@ instance
     HasField "address" (Core.TxOut era) (Addr (Crypto era)),
     -- Allow UTXOW to call UTXO
     Embed (Core.EraRule "UTXO" era) (UTXOW era),
-    Environment (Core.EraRule "UTXO" era) ~ UtxoEnv era,
+    Environment (Core.EraRule "UTXO" era) ~ (UtxoEnv era, AccountState),
     State (Core.EraRule "UTXO" era) ~ UTxOState era,
     Signal (Core.EraRule "UTXO" era) ~ TxInBlock era,
     -- Supply the HasField and Validate instances for Mary and Allegra (which match Shelley)
@@ -61,7 +61,7 @@ instance
   where
   type State (UTXOW era) = UTxOState era
   type Signal (UTXOW era) = TxInBlock era
-  type Environment (UTXOW era) = UtxoEnv era
+  type Environment (UTXOW era) = (UtxoEnv era, AccountState)
   type BaseM (UTXOW era) = ShelleyBase
   type
     PredicateFailure (UTXOW era) =

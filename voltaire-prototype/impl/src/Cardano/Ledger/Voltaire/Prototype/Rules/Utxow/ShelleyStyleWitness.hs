@@ -32,7 +32,9 @@ import Shelley.Spec.Ledger.LedgerState
       diffWitHashes,
       nullWitHashes,
       verifiedWits,
-      witsFromTxWitnesses )
+      witsFromTxWitnesses,
+      AccountState,
+    )
 import Shelley.Spec.Ledger.STS.Utxow
   ( UtxowPredicateFailure (..),
   )
@@ -91,17 +93,17 @@ type ShelleyStyleWitnessNeeds era =
 --  is that the above 'ShelleyStyleWitnessNeeds' is used as a constraint and
 -- 'Cardano.Ledger.Voltaire.Prototype.Rules.LedgerState.witsVKeyNeeded'
 -- is used instead of 'Shelley.Spec.Ledger.LedgerState.witsVKeyNeeded'
--- 
+--
 shelleyStyleWitness ::
   forall era utxow.
   ( Era era,
     VoltaireClass era,
     BaseM (utxow era) ~ ShelleyBase,
     Embed (Core.EraRule "UTXO" era) (utxow era),
-    Environment (Core.EraRule "UTXO" era) ~ UtxoEnv era,
+    Environment (Core.EraRule "UTXO" era) ~ (UtxoEnv era, AccountState),
     State (Core.EraRule "UTXO" era) ~ UTxOState era,
     Signal (Core.EraRule "UTXO" era) ~ TxInBlock era,
-    Environment (utxow era) ~ UtxoEnv era,
+    Environment (utxow era) ~ (UtxoEnv era, AccountState),
     State (utxow era) ~ UTxOState era,
     Signal (utxow era) ~ TxInBlock era,
     -- PredicateFailure (utxow era) ~ UtxowPredicateFailure era,
@@ -111,7 +113,7 @@ shelleyStyleWitness ::
   (UtxowPredicateFailure era -> PredicateFailure (utxow era)) ->
   TransitionRule (utxow era)
 shelleyStyleWitness embed = do
-  (TRC (utxoEnv@(UtxoEnv slot pp stakepools genDelegs), u, tx)) <- judgmentContext
+  (TRC ((utxoEnv@(UtxoEnv slot pp stakepools genDelegs), acct), u, tx)) <- judgmentContext
   let txbody = getField @"body" tx
       utxo = _utxo u
       witsKeyHashes = witsFromTxWitnesses @era tx
@@ -178,4 +180,4 @@ shelleyStyleWitness embed = do
     ?! embed (MIRInsufficientGenesisSigsUTXOW genSig)
 
   trans @(Core.EraRule "UTXO" era) $
-    TRC (UtxoEnv slot pp stakepools genDelegs, u, tx)
+    TRC ((UtxoEnv slot pp stakepools genDelegs, acct), u, tx)

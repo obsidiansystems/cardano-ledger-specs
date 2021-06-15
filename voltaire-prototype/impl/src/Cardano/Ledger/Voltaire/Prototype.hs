@@ -39,6 +39,7 @@ import Cardano.Ledger.Val (Val ((<->), coin))
 import Cardano.Ledger.Voltaire.Prototype.Class
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxo (UTXO)
 import Cardano.Ledger.Voltaire.Prototype.Rules.Utxow (UTXOW)
+import Cardano.Ledger.Voltaire.Prototype.Rules.Ledger (LEDGER)
 import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import qualified Cardano.Ledger.Voltaire.Prototype.Two as Two
@@ -124,12 +125,12 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
   type ProposalId (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = Two.ProposalId (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = One.PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupState (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = Two.PPUPState (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = Two.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
-  fromUtxoEnv = One.fromUtxoEnv
+  fromUtxoEnv = Two.fromUtxoEnv
   ppupTransition = Two.ppupTransition
   -- NB: identical to that of VoltairePrototype_One
   submissionsWitnesses (Shelley.UtxoEnv _ _ _ (Shelley.GenDelegs genDelegs)) submissions =
@@ -281,8 +282,6 @@ type instance Core.EraRule "DELPL" (VoltairePrototypeEra proto c) = Shelley.DELP
 
 type instance Core.EraRule "EPOCH" (VoltairePrototypeEra proto c) = Shelley.EPOCH (VoltairePrototypeEra proto c)
 
-type instance Core.EraRule "LEDGER" (VoltairePrototypeEra proto c) = Shelley.LEDGER (VoltairePrototypeEra proto c)
-
 type instance Core.EraRule "LEDGERS" (VoltairePrototypeEra proto c) = Shelley.LEDGERS (VoltairePrototypeEra proto c)
 
 type instance Core.EraRule "MIR" (VoltairePrototypeEra proto c) = Shelley.MIR (VoltairePrototypeEra proto c)
@@ -312,6 +311,8 @@ type instance Core.EraRule "TICKN" (VoltairePrototypeEra proto _c) = Shelley.TIC
 type instance Core.EraRule "UPEC" (VoltairePrototypeEra proto c) = Shelley.UPEC (VoltairePrototypeEra proto c)
 
 -- These rules are defined anew in the voltaire prototype eras
+
+type instance Core.EraRule "LEDGER" (VoltairePrototypeEra proto c) = LEDGER (VoltairePrototypeEra proto c)
 
 type instance Core.EraRule "DELEG" (VoltairePrototypeEra 'VoltairePrototype_Two c)
   = Two.DELEG (VoltairePrototypeEra 'VoltairePrototype_Two c)

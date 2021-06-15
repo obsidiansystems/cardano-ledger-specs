@@ -42,8 +42,13 @@ import Control.Monad (foldM)
 import Control.Monad.Reader.Class
 import Control.SetAlgebra (dom, eval, (⊆), (⨃))
 import NoThunks.Class (NoThunks (..))
-import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
+import Shelley.Spec.Ledger.LedgerState
+  ( pvCanFollow,
+    AccountState,
+    InstantaneousRewards,
+  )
 import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir as Mir
+import Data.Default.Class (def)
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
@@ -115,7 +120,7 @@ instance
 
 -- |
 newtype ProposedUpdates era
-  = ProposedUpdates (Map (KeyHash 'Genesis (Crypto era)) (ProposalBody era))
+  = ProposedUpdates (Map (KeyHash 'Genesis (Crypto era)) (Either (Shelley.PParamsDelta era) (InstantaneousRewards era)))
   deriving (Generic)
 
 deriving instance Show (Shelley.PParamsDelta era) => Show (ProposedUpdates era)
@@ -138,18 +143,18 @@ instance
   where
   fromCBOR = error "TODO"
 
-fromUtxoEnv :: UtxoEnv era -> One.PpupEnv era
-fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
+type PpupEnv era = (Shelley.PPUPEnv era, AccountState)
+
+fromUtxoEnv :: AccountState -> UtxoEnv era -> PpupEnv era
+fromUtxoEnv acct (UtxoEnv slot pp _ genDelegs) =
+  (Shelley.PPUPEnv slot pp genDelegs, acct)
 
 data PpupPredicateFailure era
   = UpdatePPUPFailure (One.PpupPredicateFailure era)
   | UpdateMIRFailure (Mir.DelegMirPredicateFailure era)
     deriving (Eq, Show)
 
--- | Identical to Cardano.Ledger.Voltaire.Prototype.One.ppupTransition
---   except for:
---      * different 'ProposalBody'
---      * different 'PpupState'
+-- |
 ppupTransition ::
   ( Typeable era,
     Voltaire.VoltaireClass era,
@@ -157,14 +162,14 @@ ppupTransition ::
     Voltaire.ProposalBody era ~ ProposalBody era,
     Voltaire.PpupPredicateFailure era ~ PpupPredicateFailure era,
     Voltaire.PpupState era ~ PPUPState era,
-    Voltaire.PpupEnv era ~ One.PpupEnv era,
+    Voltaire.PpupEnv era ~ PpupEnv era,
     HasField "_protocolVersion" (Core.PParams era) ProtVer,
     HasField "_protocolVersion" (Shelley.PParamsDelta era) (StrictMaybe ProtVer)
   ) =>
   TransitionRule (Voltaire.PPUP era)
 ppupTransition = do
   TRC
-    ( Shelley.PPUPEnv slot pp (GenDelegs _genDelegs),
+    ( (Shelley.PPUPEnv slot pp (GenDelegs _genDelegs), acct),
       updateState@(PPUPState (ProposedUpdates pupS) (ProposedUpdates fpupS)),
       upM
       ) <-
@@ -197,6 +202,12 @@ ppupTransition = do
             epochInfoFirst ei (EpochNo $ e + 1)
           let tooLate = firstSlotNextEpoch *- (Duration (2 * sp))
 
+          -- Check validity of MIRs / transform 'MIRCert' into 'InstantaneousRewards'
+          let handleMirBody (BodyPPUP ppup) = return $ Left ppup
+              handleMirBody (BodyMIR mirCert) = Right <$> handleMir def mirCert
+              handleMir irwd = Mir.handleMIR UpdateMIRFailure (slot, acct, pp) irwd
+          pup' <- traverse handleMirBody pup
+
           currentEpoch <- liftSTS $ do
             ei <- asks epochInfo
             epochInfoEpoch ei slot
@@ -206,13 +217,13 @@ ppupTransition = do
               currentEpoch == te ?! ppupFail (One.PPUpdateWrongEpoch currentEpoch te One.VoteForThisEpoch)
               pure $
                 PPUPState
-                  (ProposedUpdates (eval (pupS ⨃ pup)))
+                  (ProposedUpdates (eval (pupS ⨃ pup')))
                   (ProposedUpdates fpupS)
             else do
               currentEpoch + 1 == te ?! ppupFail (One.PPUpdateWrongEpoch currentEpoch te One.VoteForNextEpoch)
               pure $
                 PPUPState
                   (ProposedUpdates pupS)
-                  (ProposedUpdates (eval (fpupS ⨃ pup)))
+                  (ProposedUpdates (eval (fpupS ⨃ pup')))
  where
   ppupFail = UpdatePPUPFailure
