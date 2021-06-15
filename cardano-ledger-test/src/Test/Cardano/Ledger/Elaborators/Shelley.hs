@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,7 +23,9 @@ import Shelley.Spec.Ledger.STS.Ledger (LedgerPredicateFailure (..))
 import Shelley.Spec.Ledger.STS.Utxo (UtxoPredicateFailure (..))
 import Shelley.Spec.Ledger.STS.Utxow (UtxowPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.Tx as Shelley
+import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.ModelChain
+import Test.Cardano.Ledger.ModelChain.Script
 import Test.Cardano.Ledger.ModelChain.Value
 
 instance
@@ -32,17 +35,22 @@ instance
   ) =>
   ElaborateEraModel (ShelleyEra crypto)
   where
+  type EraFeatureSet (ShelleyEra crypto) = 'FeatureSet 'ExpectAdaOnly ('TyScriptFeature 'False 'False)
+  eraFeatureSet _ = FeatureTag ValueFeatureTag_AdaOnly ScriptFeatureTag_None
+
+  reifyValueConstraint = ExpectedValueTypeC_Simple
+
   toEraPredicateFailure = \case
-    ModelValueNotConservedUTxO x y -> State.evalState $
+    ModelValueNotConservedUTxO (ModelValue x) (ModelValue y) -> State.evalState $
       Except.runExceptT $ do
-        x' <- Except.ExceptT $ evalModelValue lookupModelValue x
-        y' <- Except.ExceptT $ evalModelValue lookupModelValue y
+        x' <- Except.ExceptT $ evalModelValue (lookupModelValue noScriptAction) x
+        y' <- Except.ExceptT $ evalModelValue (lookupModelValue noScriptAction) y
         pure $
           ApplyBlockTransitionError_Tx $
             ApplyTxError
               [UtxowFailure (UtxoFailure (ValueNotConservedUTxO x' y'))]
 
-  makeTxBody _ maxTTL fee ins outs dcerts wdrl =
+  makeTxBody (TxBodyArguments maxTTL fee ins outs dcerts wdrl (NoMintSupport ())) =
     Shelley.TxBody
       { Shelley._inputs = ins,
         Shelley._outputs = outs,
@@ -54,5 +62,5 @@ instance
         Shelley._mdHash = SNothing
       }
 
-  makeTx _ realTxBody wits =
+  makeTx _ realTxBody (TxWitnessArguments wits (NoScriptSupport ())) =
     Shelley.Tx realTxBody (mempty {Shelley.addrWits = wits}) SNothing

@@ -43,7 +43,10 @@ library
     Test.Cardano.Ledger.ModelChain
     Test.Cardano.Ledger.ModelChain.Properties
     Test.Cardano.Ledger.ModelChain.Value
+    Test.Cardano.Ledger.ModelChain.Address
+    Test.Cardano.Ledger.ModelChain.Script
     Test.Cardano.Ledger.ModelChain.Utils
+    Test.Cardano.Ledger.Elaborators
     Test.Cardano.Ledger.Elaborators.Alonzo
     Test.Cardano.Ledger.Elaborators.Shelley
 

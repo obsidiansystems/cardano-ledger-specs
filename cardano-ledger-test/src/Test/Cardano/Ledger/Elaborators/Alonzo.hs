@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -15,13 +16,13 @@ import Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis (..))
 import Cardano.Ledger.Alonzo.Rules.Utxo
 import Cardano.Ledger.Alonzo.Rules.Utxow
 import Cardano.Ledger.Alonzo.Scripts (CostModel (..), ExUnits (..), Prices (..))
+import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import Cardano.Ledger.Alonzo.Translation ()
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import Cardano.Ledger.Coin
 import Cardano.Ledger.Crypto (DSIGN, KES)
 import Cardano.Ledger.ShelleyMA.Timelocks (ValidityInterval (..))
-import qualified Cardano.Ledger.Val as Val
 import qualified Control.Monad.Except as Except
 import qualified Control.Monad.Trans.State as State hiding (state)
 import Data.Default.Class
@@ -32,7 +33,9 @@ import Shelley.Spec.Ledger.API.Mempool (ApplyTxError (..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
 import Shelley.Spec.Ledger.STS.Ledger
 import Shelley.Spec.Ledger.STS.Utxow
+import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.ModelChain
+import Test.Cardano.Ledger.ModelChain.Script
 import Test.Cardano.Ledger.ModelChain.Value
 
 instance Default AlonzoGenesis where
@@ -55,11 +58,16 @@ instance
   ) =>
   ElaborateEraModel (AlonzoEra crypto)
   where
+  type EraFeatureSet (AlonzoEra crypto) = 'FeatureSet 'ExpectAnyOutput ('TyScriptFeature 'True 'True)
+  eraFeatureSet _ = FeatureTag ValueFeatureTag_AnyOutput ScriptFeatureTag_PlutusV1
+
+  reifyValueConstraint = ExpectedValueTypeC_MA
+
   toEraPredicateFailure = \case
-    ModelValueNotConservedUTxO x y -> State.evalState $
+    ModelValueNotConservedUTxO (ModelValue x) (ModelValue y) -> State.evalState $
       Except.runExceptT $ do
-        x' <- Except.ExceptT $ evalModelValue lookupModelValue x
-        y' <- Except.ExceptT $ evalModelValue lookupModelValue y
+        x' <- Except.ExceptT $ evalModelValue (lookupModelValue noScriptAction) x
+        y' <- Except.ExceptT $ evalModelValue (lookupModelValue noScriptAction) y
         pure $
           ApplyBlockTransitionError_Tx $
             ApplyTxError
@@ -69,7 +77,9 @@ instance
                   )
               ]
 
-  makeTxBody _ maxTTL fee ins outs dcerts wdrl =
+  makeTimelockScript _ = Alonzo.TimelockScript
+
+  makeTxBody (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint)) =
     Alonzo.TxBody
       { Alonzo.inputs = ins,
         Alonzo.collateral = ins,
@@ -80,18 +90,18 @@ instance
         Alonzo.txvldt = ValidityInterval SNothing $ SJust (1 + maxTTL),
         Alonzo.txUpdates = SNothing,
         Alonzo.reqSignerHashes = Set.empty,
-        Alonzo.mint = Val.zero,
+        Alonzo.mint = mint,
         Alonzo.wppHash = SNothing,
         Alonzo.adHash = SNothing,
         Alonzo.txnetworkid = SNothing -- SJust Testnet
       }
 
-  makeTx _ realTxBody wits =
+  makeTx _ realTxBody (TxWitnessArguments wits (SupportsScript ScriptFeatureTag_PlutusV1 scripts)) =
     let witSet =
           Alonzo.TxWitness
             { Alonzo.txwitsVKey = wits,
               Alonzo.txwitsBoot = Set.empty,
-              Alonzo.txscripts = Map.empty,
+              Alonzo.txscripts = scripts,
               Alonzo.txdats = mempty,
               Alonzo.txrdmrs = Alonzo.Redeemers Map.empty
             }

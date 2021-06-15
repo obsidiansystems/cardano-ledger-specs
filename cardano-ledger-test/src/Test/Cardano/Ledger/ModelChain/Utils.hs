@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
@@ -17,6 +19,7 @@ import Data.Default.Class
 import Data.Functor.Identity
 import Data.List (nub, (\\))
 import qualified Data.Map as Map
+import Data.Proxy
 import qualified Data.Set as Set
 import Data.Time.Clock (secondsToNominalDiffTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
@@ -26,7 +29,10 @@ import Shelley.Spec.Ledger.Genesis
 import Shelley.Spec.Ledger.LedgerState (NewEpochState)
 import Shelley.Spec.Ledger.PParams (emptyPParams)
 import qualified Shelley.Spec.Ledger.PParams as PParams
+import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.ModelChain
+import Test.Cardano.Ledger.ModelChain.Address
+import Test.Cardano.Ledger.ModelChain.Script
 import Test.Cardano.Ledger.ModelChain.Value
 import Test.Shelley.Spec.Ledger.Utils (testGlobals)
 import Test.Tasty.QuickCheck
@@ -42,7 +48,7 @@ chainModelInteractionWith ::
   ) =>
   proxy era ->
   Map.Map ModelAddress Coin ->
-  [ModelEpoch] ->
+  [ModelEpoch (EraFeatureSet era)] ->
   (Either (ElaborateBlockError era) (), (NewEpochState era, EraElaboratorState era))
 chainModelInteractionWith _ genesisAccounts modelBlocks =
   let -- TODO, pass this in as a generator.
@@ -87,7 +93,7 @@ testChainModelInteractionWith ::
   proxy era ->
   (NewEpochState era -> EraElaboratorState era -> prop) ->
   Map.Map ModelAddress Coin ->
-  [ModelEpoch] ->
+  [ModelEpoch (EraFeatureSet era)] ->
   Property
 testChainModelInteractionWith proxy p a b =
   let (result, (nes, ees)) = chainModelInteractionWith proxy a b
@@ -111,9 +117,9 @@ testChainModelInteractionRejection ::
     Show (Core.Value era)
   ) =>
   proxy era ->
-  ModelPredicateFailure ->
+  ModelPredicateFailure (EraFeatureSet era) ->
   Map.Map ModelAddress Coin ->
-  [ModelEpoch] ->
+  [ModelEpoch (EraFeatureSet era)] ->
   Property
 testChainModelInteractionRejection proxy e a b =
   let (result, (nes, ees)) = chainModelInteractionWith proxy a b
@@ -142,19 +148,37 @@ testChainModelInteraction ::
   ) =>
   proxy era ->
   Map.Map ModelAddress Coin ->
-  [ModelEpoch] ->
+  [ModelEpoch (EraFeatureSet era)] ->
   Property
 testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (\x y -> x `seq` y `seq` True)
 
+type AllModelFeatures = 'FeatureSet 'ExpectAnyOutput ('TyScriptFeature 'True 'True)
+
+filterChainModelProp ::
+  forall era proxy.
+  (ElaborateEraModel era) =>
+  proxy era ->
+  ([ModelEpoch (EraFeatureSet era)] -> Property) ->
+  [ModelEpoch AllModelFeatures] ->
+  Property
+filterChainModelProp proxy f xs =
+  case traverse (filterFeatures (eraFeatureSet proxy)) xs of
+    Nothing -> cover 0 True "feature absent in era" True -- todo, is there a nice way to report these?
+    Just xs' -> f xs'
+
 -- | helper to produce a "blank" ModelTx with most fields set to a reasonable
 -- "default"
-modelTx :: ModelTxId -> ModelTx
+modelTx :: forall (era :: FeatureSet). KnownRequiredFeatures era => ModelTxId -> ModelTx era
 modelTx txId =
   ModelTx
     { _mtxId = txId,
       _mtxInputs = Set.empty,
       _mtxOutputs = [],
-      _mtxFee = ModelValue_Inject $ Coin 0,
+      _mtxFee = ModelValue $ ModelValue_Inject $ Coin 0,
       _mtxDCert = [],
-      _mtxWdrl = Map.empty
+      _mtxWdrl = Map.empty,
+      _mtxMint = case reifyRequiredFeatures (Proxy :: Proxy era) of
+        FeatureTag v _ -> case v of
+          ValueFeatureTag_AdaOnly -> NoMintSupport ()
+          ValueFeatureTag_AnyOutput -> SupportsMint $ ModelValue $ ModelValue_Inject $ Coin 0
     }

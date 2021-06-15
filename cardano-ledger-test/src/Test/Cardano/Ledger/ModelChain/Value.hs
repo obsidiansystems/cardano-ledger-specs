@@ -1,9 +1,15 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE EmptyDataDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Test.Cardano.Ledger.ModelChain.Value where
 
@@ -12,15 +18,33 @@ import Cardano.Ledger.Val
 import Control.Lens
 import Control.Monad
 import qualified Control.Monad.Except as Except
+import Data.Kind
 import Numeric.Natural
 
-data ModelValueF a
-  = ModelValue_Var a
-  | ModelValue_Inject Coin
-  | ModelValue_Add (ModelValueF a) (ModelValueF a)
-  | ModelValue_Scale Natural (ModelValueF a)
-  | ModelValue_Sub (ModelValueF a) (ModelValueF a)
-  deriving (Functor, Foldable, Traversable, Show, Eq, Ord)
+data TyValueExpected
+  = ExpectAdaOnly
+  | ExpectAnyOutput
+
+type family ValueFeature' x :: TyValueExpected
+
+data ModelValueF (a :: Type) where
+  ModelValue_Var :: a -> ModelValueF a
+  ModelValue_Inject :: Coin -> ModelValueF a
+  ModelValue_Scale :: Natural -> ModelValueF a -> ModelValueF a
+  ModelValue_Add :: ModelValueF a -> ModelValueF a -> ModelValueF a
+  ModelValue_Sub :: ModelValueF a -> ModelValueF a -> ModelValueF a
+
+deriving instance Show a => Show (ModelValueF a)
+
+deriving instance Eq a => Eq (ModelValueF a)
+
+deriving instance Ord a => Ord (ModelValueF a)
+
+deriving instance Functor ModelValueF
+
+deriving instance Foldable ModelValueF
+
+deriving instance Traversable ModelValueF
 
 data ModelValueError a
   = ValueUnderflow a a
