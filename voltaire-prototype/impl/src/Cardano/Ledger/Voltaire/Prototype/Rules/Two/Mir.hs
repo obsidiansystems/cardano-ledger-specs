@@ -44,7 +44,8 @@ import Shelley.Spec.Ledger.Slot
   )
 import Shelley.Spec.Ledger.TxBody
   ( MIRPot (..),
-    MIRTarget (..)
+    MIRTarget (..),
+    MIRCert (MIRCert),
   )
 import Shelley.Spec.Ledger.PParams
   ( ProtVer,
@@ -79,10 +80,9 @@ handleMIR ::
   )
   => (SlotNo, AccountState, pp)
   -> InstantaneousRewards crypto
-  -> MIRPot
-  -> MIRTarget crypto
+  -> MIRCert crypto
   -> Rule sts rtype (InstantaneousRewards crypto)
-handleMIR (slot, acnt, pp) irwd targetPot (StakeAddressesMIR credCoinMap) =
+handleMIR (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR credCoinMap)) =
     if HardForks.allowMIRTransfer pp
       then do
         sp <- liftSTS $ asks stabilityWindow
@@ -136,7 +136,7 @@ handleMIR (slot, acnt, pp) irwd targetPot (StakeAddressesMIR credCoinMap) =
         case targetPot of
           ReservesMIR -> pure $ irwd {iRReserves = combinedMap}
           TreasuryMIR -> pure $ irwd {iRTreasury = combinedMap}
-handleMIR (slot, acnt, pp) irwd targetPot (SendToOppositePotMIR coin) =
+handleMIR (slot, acnt, pp) irwd (MIRCert targetPot (SendToOppositePotMIR coin)) =
       if HardForks.allowMIRTransfer pp
         then do
           sp <- liftSTS $ asks stabilityWindow
