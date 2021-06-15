@@ -43,8 +43,6 @@ import Control.Monad.Reader.Class
 import Control.SetAlgebra (dom, eval, (⊆), (⨃))
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
-import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley -- TMP
-import qualified Shelley.Spec.Ledger.LedgerState as Shelley -- TMP
 import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs

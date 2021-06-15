@@ -54,7 +54,6 @@ import GHC.Records (HasField (..))
 import qualified Shelley.Spec.Ledger.API as Shelley
 import qualified Shelley.Spec.Ledger.BlockChain as Shelley
   ( TxSeq (..),
-    bbHash,
     txSeqTxns,
   )
 import Shelley.Spec.Ledger.EpochBoundary (BlocksMade (..), emptySnapShots)
@@ -71,7 +70,7 @@ import qualified Shelley.Spec.Ledger.STS.Rupd as Shelley
 import qualified Shelley.Spec.Ledger.STS.Snap as Shelley
 import qualified Shelley.Spec.Ledger.STS.Tick as Shelley
 import qualified Shelley.Spec.Ledger.STS.Upec as Shelley
-import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet, segwitTx)
+import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet)
 import Shelley.Spec.Ledger.Keys (asWitness)
 
 data VoltairePrototype
