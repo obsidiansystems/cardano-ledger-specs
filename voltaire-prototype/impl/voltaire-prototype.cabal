@@ -43,6 +43,8 @@ library
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxow
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxow.ShelleyStyleWitness
     Cardano.Ledger.Voltaire.Prototype.Rules.LedgerState
+    Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
+    Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir
     Cardano.Ledger.Voltaire.Prototype.TxBody
 
   -- other-extensions:
