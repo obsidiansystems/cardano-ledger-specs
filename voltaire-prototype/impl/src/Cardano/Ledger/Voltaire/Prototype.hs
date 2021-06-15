@@ -44,6 +44,7 @@ import Cardano.Ledger.Voltaire.Prototype.TxBody
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import qualified Cardano.Ledger.Voltaire.Prototype.Two as Two
 import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg as Two
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Upec as Two
 import Control.DeepSeq (deepseq)
 import Control.SetAlgebra (eval, (◁))
 import Data.Default.Class (def, Default)
@@ -308,9 +309,13 @@ type instance Core.EraRule "TICKF" (VoltairePrototypeEra proto c) = Shelley.TICK
 
 type instance Core.EraRule "TICKN" (VoltairePrototypeEra proto _c) = Shelley.TICKN
 
-type instance Core.EraRule "UPEC" (VoltairePrototypeEra proto c) = Shelley.UPEC (VoltairePrototypeEra proto c)
+type instance Core.EraRule "UPEC" (VoltairePrototypeEra 'VoltairePrototype_One c)
+  = Shelley.UPEC (VoltairePrototypeEra 'VoltairePrototype_One c)
 
 -- These rules are defined anew in the voltaire prototype eras
+
+type instance Core.EraRule "UPEC" (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  = Two.UPEC (VoltairePrototypeEra 'VoltairePrototype_Two c)
 
 type instance Core.EraRule "LEDGER" (VoltairePrototypeEra proto c) = LEDGER (VoltairePrototypeEra proto c)
 
