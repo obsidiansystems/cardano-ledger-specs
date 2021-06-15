@@ -43,7 +43,7 @@ import Control.Monad.Reader.Class
 import Control.SetAlgebra (dom, eval, (⊆), (⨃))
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
-import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir as Mir
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
@@ -143,7 +143,7 @@ fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
 
 data PpupPredicateFailure era
   = UpdatePPUPFailure (One.PpupPredicateFailure era)
-  | UpdateMIRFailure (Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir.DelegMirPredicateFailure era)
+  | UpdateMIRFailure (Mir.DelegMirPredicateFailure era)
     deriving (Eq, Show)
 
 -- | Identical to Cardano.Ledger.Voltaire.Prototype.One.ppupTransition
