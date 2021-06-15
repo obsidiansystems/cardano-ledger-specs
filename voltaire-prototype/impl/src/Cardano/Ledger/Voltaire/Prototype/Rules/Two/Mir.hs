@@ -23,8 +23,10 @@ import Data.Foldable (fold)
 import Data.Group (Group (..))
 import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
+import GHC.Records (HasField)
 import Shelley.Spec.Ledger.BaseTypes
   ( Globals (..),
+    ShelleyBase,
   )
 import Shelley.Spec.Ledger.HardForks as HardForks
 import Shelley.Spec.Ledger.LedgerState
@@ -43,6 +45,9 @@ import Shelley.Spec.Ledger.Slot
 import Shelley.Spec.Ledger.TxBody
   ( MIRPot (..),
     MIRTarget (..)
+  )
+import Shelley.Spec.Ledger.PParams
+  ( ProtVer,
   )
 
 -- | The MIR-related constructors that
@@ -66,6 +71,17 @@ data DelegMirPredicateFailure era
 
 -- | Handles the MIR-related stuff that was removed from
 -- 'Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg.delegationTransition'
+handleMIR ::
+  ( HasField "_protocolVersion" pp ProtVer,
+    STS sts,
+    BaseM sts ~ ShelleyBase,
+    PredicateFailure sts ~ DelegMirPredicateFailure era
+  )
+  => (SlotNo, AccountState, pp)
+  -> InstantaneousRewards crypto
+  -> MIRPot
+  -> MIRTarget crypto
+  -> Rule sts rtype (InstantaneousRewards crypto)
 handleMIR (slot, acnt, pp) irwd targetPot (StakeAddressesMIR credCoinMap) =
     if HardForks.allowMIRTransfer pp
       then do
