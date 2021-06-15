@@ -127,7 +127,7 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
   type PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = One.PpupEnv (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupState (VoltairePrototypeEra 'VoltairePrototype_Two c)
-    = Two.UpdateState (VoltairePrototypeEra 'VoltairePrototype_Two c)
+    = Two.PPUPState (VoltairePrototypeEra 'VoltairePrototype_Two c)
   type PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
     = One.PpupPredicateFailure (VoltairePrototypeEra 'VoltairePrototype_Two c)
   fromUtxoEnv = One.fromUtxoEnv

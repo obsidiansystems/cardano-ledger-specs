@@ -89,27 +89,27 @@ bodyPParamsDelta _ = Nothing
 -- identically. We mimic that behavior here.
 type ProposalId era = ProposalBody era
 
-data UpdateState era = UpdateState
+data PPUPState era = PPUPState
   { proposals :: !(ProposedUpdates era),
     futureProposals :: !(ProposedUpdates era)
   }
   deriving (Generic)
 
-deriving instance Show (Shelley.PParamsDelta era) => Show (UpdateState era)
+deriving instance Show (Shelley.PParamsDelta era) => Show (PPUPState era)
 
-deriving instance Eq (Shelley.PParamsDelta era) => Eq (UpdateState era)
+deriving instance Eq (Shelley.PParamsDelta era) => Eq (PPUPState era)
 
-deriving instance NFData (Shelley.PParamsDelta era) => NFData (UpdateState era)
+deriving instance NFData (Shelley.PParamsDelta era) => NFData (PPUPState era)
 
-instance NoThunks (Shelley.PParamsDelta era) => NoThunks (UpdateState era)
+instance NoThunks (Shelley.PParamsDelta era) => NoThunks (PPUPState era)
 
-instance (Era era, ToCBOR (Shelley.PParamsDelta era)) => ToCBOR (UpdateState era) where
+instance (Era era, ToCBOR (Shelley.PParamsDelta era)) => ToCBOR (PPUPState era) where
   toCBOR _ =
     error "TODO"
 
 instance
   (Era era, FromCBOR (Shelley.PParamsDelta era)) =>
-  FromCBOR (UpdateState era)
+  FromCBOR (PPUPState era)
   where
   fromCBOR =
     error "TODO"
@@ -152,7 +152,7 @@ ppupTransition ::
     Voltaire.ProposalHeader era ~ One.ProposalHeader era,
     Voltaire.ProposalBody era ~ ProposalBody era,
     Voltaire.PpupPredicateFailure era ~ One.PpupPredicateFailure era,
-    Voltaire.PpupState era ~ UpdateState era,
+    Voltaire.PpupState era ~ PPUPState era,
     Voltaire.PpupEnv era ~ One.PpupEnv era,
     HasField "_protocolVersion" (Core.PParams era) ProtVer,
     HasField "_protocolVersion" (Shelley.PParamsDelta era) (StrictMaybe ProtVer)
@@ -161,7 +161,7 @@ ppupTransition ::
 ppupTransition = do
   TRC
     ( Shelley.PPUPEnv slot pp (GenDelegs _genDelegs),
-      updateState@(UpdateState (ProposedUpdates pupS) (ProposedUpdates fpupS)),
+      updateState@(PPUPState (ProposedUpdates pupS) (ProposedUpdates fpupS)),
       upM
       ) <-
     judgmentContext
@@ -201,12 +201,12 @@ ppupTransition = do
             then do
               currentEpoch == te ?! One.PPUpdateWrongEpoch currentEpoch te One.VoteForThisEpoch
               pure $
-                UpdateState
+                PPUPState
                   (ProposedUpdates (eval (pupS ⨃ pup)))
                   (ProposedUpdates fpupS)
             else do
               currentEpoch + 1 == te ?! One.PPUpdateWrongEpoch currentEpoch te One.VoteForNextEpoch
               pure $
-                UpdateState
+                PPUPState
                   (ProposedUpdates pupS)
                   (ProposedUpdates (eval (fpupS ⨃ pup)))
