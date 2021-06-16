@@ -9,7 +9,11 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
-module Cardano.Ledger.Voltaire.Prototype.Two where
+module Cardano.Ledger.Voltaire.Prototype.Two
+( module Cardano.Ledger.Voltaire.Prototype.Two
+, Shelley.MIRCert
+)
+where
 
 import Cardano.Ledger.Era
 import qualified Cardano.Ledger.Core as Core
@@ -48,13 +52,13 @@ import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
 data ProposalBody era
   = BodyPPUP (Shelley.PParamsDelta era)
   -- | TODO: 'MIRCert' contains the info we need but should be renamed/moved to avoid confusion
-  | BodyMIR (Shelley.MIRCert era)
+  | BodyMIR (Shelley.MIRCert (Crypto era))
     deriving (Generic)
 
 deriving instance Eq (Shelley.PParamsDelta era) => Eq (ProposalBody era)
 
 -- | TODO: actually implement orphan (required because a ProposalId must be orderable)
-instance Ord (Shelley.MIRCert era) where
+instance Ord (Shelley.MIRCert crypto) where
   compare = error "TODO"
 
 deriving instance Ord (Shelley.PParamsDelta era) => Ord (ProposalBody era)
@@ -82,6 +86,10 @@ instance
 bodyPParamsDelta :: ProposalBody era -> Maybe (Shelley.PParamsDelta era)
 bodyPParamsDelta (BodyPPUP pParams) = Just pParams
 bodyPParamsDelta _ = Nothing
+
+bodyMirCert :: ProposalBody era -> Maybe (Shelley.MIRCert (Crypto era))
+bodyMirCert (BodyMIR mirCert) = Just mirCert
+bodyMirCert _ = Nothing
 
 -- In Shelley the genesis key delegates vote for a proposal by submitting it
 -- identically. We mimic that behavior here.

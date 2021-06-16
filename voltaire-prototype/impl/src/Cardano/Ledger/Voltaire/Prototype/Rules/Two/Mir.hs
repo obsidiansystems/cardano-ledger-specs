@@ -24,6 +24,7 @@ import Data.Group (Group (..))
 import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
 import GHC.Records (HasField)
+import NoThunks.Class (NoThunks)
 import Shelley.Spec.Ledger.BaseTypes
   ( Globals (..),
     ShelleyBase,
@@ -69,6 +70,8 @@ data DelegMirPredicateFailure era
       !Coin -- amount available
   | MIRProducesNegativeUpdate
   deriving (Show, Eq, Generic)
+
+instance NoThunks (DelegMirPredicateFailure era)
 
 -- | Handles the MIR-related stuff that was removed from
 -- 'Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg.delegationTransition'
