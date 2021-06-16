@@ -44,7 +44,6 @@ import Shelley.Spec.Ledger.Serialization
   )
 import Shelley.Spec.Ledger.BaseTypes (ShelleyBase)
 import qualified Shelley.Spec.Ledger.STS.Utxo as Shelley
-import Shelley.Spec.Ledger.LedgerState (AccountState)
 
 class
   ( Eq (PpupPredicateFailure era)
@@ -103,7 +102,7 @@ class
     type PpupEnv era :: Type
     type PpupState era :: Type
     type PpupPredicateFailure era :: Type
-    fromUtxoEnv :: AccountState -> Shelley.UtxoEnv era -> PpupEnv era
+    fromUtxoEnv :: Shelley.UtxoEnv era -> PpupEnv era
     ppupTransition :: TransitionRule (PPUP era)
     submissionsWitnesses :: Shelley.UtxoEnv era -> Submissions era -> Set (KeyHash 'Witness (Crypto era))
 

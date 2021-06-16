@@ -177,8 +177,8 @@ instance
 type PpupEnv era = Shelley.PPUPEnv era
 type PpupState era = Shelley.PPUPState era
 
-fromUtxoEnv :: Shelley.AccountState -> UtxoEnv era -> PpupEnv era
-fromUtxoEnv _ (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
+fromUtxoEnv :: UtxoEnv era -> PpupEnv era
+fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
 
 ppupTransition ::
   ( Typeable era,

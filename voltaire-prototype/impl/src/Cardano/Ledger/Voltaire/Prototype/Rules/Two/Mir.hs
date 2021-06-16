@@ -76,14 +76,13 @@ handleMIR ::
   ( HasField "_protocolVersion" pp ProtVer,
     STS sts,
     BaseM sts ~ ShelleyBase,
-    PredicateFailure sts ~ predicateFailure
+    PredicateFailure sts ~ DelegMirPredicateFailure era
   )
-  => (DelegMirPredicateFailure era -> predicateFailure)
-  -> (SlotNo, AccountState, pp)
+  => (SlotNo, AccountState, pp)
   -> InstantaneousRewards crypto
   -> MIRCert crypto
   -> Rule sts rtype (InstantaneousRewards crypto)
-handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR credCoinMap)) =
+handleMIR (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR credCoinMap)) =
     if HardForks.allowMIRTransfer pp
       then do
         sp <- liftSTS $ asks stabilityWindow
@@ -93,7 +92,7 @@ handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR c
           epochInfoFirst ei $ EpochNo (currEpoch + 1)
         let tooLate = firstSlot *- Duration sp
         slot < tooLate
-          ?! wrapFail (MIRCertificateTooLateinEpochDELEG slot tooLate)
+          ?! MIRCertificateTooLateinEpochDELEG slot tooLate
 
         let (potAmount, delta, instantaneousRewards) =
               case targetPot of
@@ -104,10 +103,10 @@ handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR c
             requiredForRewards = fold combinedMap
             available = potAmount `addDeltaCoin` delta
 
-        all (>= mempty) combinedMap ?! wrapFail MIRProducesNegativeUpdate
+        all (>= mempty) combinedMap ?! MIRProducesNegativeUpdate
 
         requiredForRewards <= available
-          ?! wrapFail (InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards available)
+          ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards available
 
         case targetPot of
           ReservesMIR -> pure $ irwd {iRReserves = combinedMap}
@@ -120,9 +119,9 @@ handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR c
           epochInfoFirst ei $ EpochNo (currEpoch + 1)
         let tooLate = firstSlot *- Duration sp
         slot < tooLate
-          ?! wrapFail (MIRCertificateTooLateinEpochDELEG slot tooLate)
+          ?! MIRCertificateTooLateinEpochDELEG slot tooLate
 
-        all (>= mempty) credCoinMap ?! wrapFail MIRNegativesNotCurrentlyAllowed
+        all (>= mempty) credCoinMap ?! MIRNegativesNotCurrentlyAllowed
 
         let (potAmount, instantaneousRewards) =
               case targetPot of
@@ -132,12 +131,12 @@ handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (StakeAddressesMIR c
             combinedMap = Map.union credCoinMap' instantaneousRewards
             requiredForRewards = fold combinedMap
         requiredForRewards <= potAmount
-          ?! wrapFail (InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards potAmount)
+          ?! InsufficientForInstantaneousRewardsDELEG targetPot requiredForRewards potAmount
 
         case targetPot of
           ReservesMIR -> pure $ irwd {iRReserves = combinedMap}
           TreasuryMIR -> pure $ irwd {iRTreasury = combinedMap}
-handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (SendToOppositePotMIR coin)) =
+handleMIR (slot, acnt, pp) irwd (MIRCert targetPot (SendToOppositePotMIR coin)) =
       if HardForks.allowMIRTransfer pp
         then do
           sp <- liftSTS $ asks stabilityWindow
@@ -147,11 +146,11 @@ handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (SendToOppositePotMI
             epochInfoFirst ei $ EpochNo (currEpoch + 1)
           let tooLate = firstSlot *- Duration sp
           slot < tooLate
-            ?! wrapFail (MIRCertificateTooLateinEpochDELEG slot tooLate)
+            ?! MIRCertificateTooLateinEpochDELEG slot tooLate
 
           let available = availableAfterMIR targetPot acnt irwd
           coin <= available
-            ?! wrapFail (InsufficientForTransferDELEG targetPot coin available)
+            ?! InsufficientForTransferDELEG targetPot coin available
 
           let dr = deltaReserves irwd
               dt = deltaTreasury irwd
@@ -169,5 +168,5 @@ handleMIR wrapFail (slot, acnt, pp) irwd (MIRCert targetPot (SendToOppositePotMI
                       deltaTreasury = dt <> (invert $ toDeltaCoin coin)
                   }
         else do
-          failBecause $ wrapFail MIRTransferNotCurrentlyAllowed
+          failBecause MIRTransferNotCurrentlyAllowed
           pure irwd

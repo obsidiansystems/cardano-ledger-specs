@@ -42,7 +42,6 @@ library
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxo
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxow
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxow.ShelleyStyleWitness
-    Cardano.Ledger.Voltaire.Prototype.Rules.Ledger
     Cardano.Ledger.Voltaire.Prototype.Rules.LedgerState
     Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
     Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir

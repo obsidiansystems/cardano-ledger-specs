@@ -249,7 +249,7 @@ utxoTransition ::
   ) =>
   TransitionRule (UTXO era)
 utxoTransition = do
-  TRC ((env@(Shelley.UtxoEnv slot pp stakepools _genDelegs), acct), u, tx) <- judgmentContext
+  TRC (env@(Shelley.UtxoEnv slot pp stakepools _genDelegs), u, tx) <- judgmentContext
   let Shelley.UTxOState utxo deposits' fees ppup = u
   let txb = getField @"body" tx
 
@@ -287,7 +287,7 @@ utxoTransition = do
   -- process Protocol Parameter Update Proposals
   ppup' <-
     trans @(Core.EraRule "PPUP" era) $
-      TRC (fromUtxoEnv acct env, ppup, txup tx)
+      TRC (fromUtxoEnv env, ppup, txup tx)
 
   -- Check that the mint field does not try to mint ADA. This is equivalent to
   -- the check `adaPolicy ∉ supp mint tx` in the spec.
@@ -377,7 +377,7 @@ instance
   type Signal (UTXO era) = Tx era
   type
     Environment (UTXO era) =
-      (Shelley.UtxoEnv era, Shelley.AccountState)
+      Shelley.UtxoEnv era
   type BaseM (UTXO era) = ShelleyBase
   type
     PredicateFailure (UTXO era) =
