@@ -47,6 +47,7 @@ import Control.Monad.Reader.Class
 import Control.SetAlgebra (dom, eval, (⊆), (⨃))
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
+import Data.Default.Class (Default(def))
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
@@ -59,7 +60,7 @@ deriving instance Eq (Shelley.PParamsDelta era) => Eq (ProposalBody era)
 
 -- | TODO: actually implement orphan (required because a ProposalId must be orderable)
 instance Ord (Shelley.MIRCert crypto) where
-  compare = error "TODO"
+  compare = error "TODO: Ord Shelley.MIRCert"
 
 deriving instance Ord (Shelley.PParamsDelta era) => Ord (ProposalBody era)
 
@@ -108,6 +109,12 @@ deriving instance Eq (Shelley.PParamsDelta era) => Eq (PPUPState era)
 deriving instance NFData (Shelley.PParamsDelta era) => NFData (PPUPState era)
 
 instance NoThunks (Shelley.PParamsDelta era) => NoThunks (PPUPState era)
+
+instance Default (PPUPState era) where
+  def = PPUPState emptyPUpdates emptyPUpdates
+    where
+    emptyPUpdates :: ProposedUpdates era
+    emptyPUpdates = ProposedUpdates Map.empty
 
 instance (Era era, ToCBOR (Shelley.PParamsDelta era)) => ToCBOR (PPUPState era) where
   toCBOR _ =

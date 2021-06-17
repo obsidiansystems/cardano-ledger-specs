@@ -46,6 +46,8 @@ library
     Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
     Cardano.Ledger.Voltaire.Prototype.Rules.Two.Mir
     Cardano.Ledger.Voltaire.Prototype.Rules.Two.Upec
+    Cardano.Ledger.Voltaire.Prototype.Rules.Two.Delpl
+    Cardano.Ledger.Voltaire.Prototype.Rules.Two.Epoch
     Cardano.Ledger.Voltaire.Prototype.TxBody
 
   -- other-extensions:

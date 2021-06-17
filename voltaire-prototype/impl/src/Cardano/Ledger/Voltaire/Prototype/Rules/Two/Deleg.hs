@@ -12,9 +12,11 @@
 
 module Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
   ( DELEG,
+    DCert (..),
     DelegEnv (..),
     PredicateFailure,
     DelegPredicateFailure (..),
+    fromShelleyCert,
   )
 where
 
@@ -63,6 +65,7 @@ import Shelley.Spec.Ledger.Slot
     SlotNo,
     (+*),
   )
+import qualified Shelley.Spec.Ledger.TxBody as Shelley
 import Shelley.Spec.Ledger.TxBody
   ( DelegCert (..),
     Delegation (..),
@@ -79,6 +82,12 @@ data DCert crypto
   deriving (Show, Generic, Eq, NFData)
 
 instance NoThunks (DCert crypto)
+
+fromShelleyCert :: Shelley.DCert crypto -> DCert crypto
+fromShelleyCert (Shelley.DCertDeleg dc) = DCertDeleg dc
+fromShelleyCert (Shelley.DCertPool pc) = DCertPool pc
+fromShelleyCert (Shelley.DCertGenesis gdc) = DCertGenesis gdc
+fromShelleyCert (Shelley.DCertMir dc) = error $ "BUG: Prototype two does not support MIR-certificates. " <> show dc
 
 data DELEG era
 
@@ -154,7 +163,7 @@ delegationTransition ::
   ) =>
   TransitionRule (DELEG era)
 delegationTransition = do
-  TRC (DelegEnv slot ptr pp, ds, c) <- judgmentContext
+  TRC (DelegEnv slot ptr _, ds, c) <- judgmentContext
   case c of
     DCertDeleg (RegKey hk) -> do
       eval (hk ∉ dom (_rewards ds)) ?! StakeKeyAlreadyRegisteredDELEG hk

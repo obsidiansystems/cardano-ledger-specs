@@ -44,6 +44,8 @@ import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import qualified Cardano.Ledger.Voltaire.Prototype.Two as Two
 import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg as Two
 import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Upec as Two
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Delpl as Two
+import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Epoch as Two
 import Control.DeepSeq (deepseq)
 import Control.SetAlgebra (eval, (◁))
 import qualified Control.State.Transition as S
@@ -72,6 +74,8 @@ import qualified Shelley.Spec.Ledger.STS.Rupd as Shelley
 import qualified Shelley.Spec.Ledger.STS.Snap as Shelley
 import qualified Shelley.Spec.Ledger.STS.Tick as Shelley
 import qualified Shelley.Spec.Ledger.STS.Upec as Shelley
+import qualified Shelley.Spec.Ledger.STS.NewEpoch as Shelley
+import qualified Shelley.Spec.Ledger.STS.Delegs as Shelley
 import Shelley.Spec.Ledger.Tx (Tx, TxOut (..), WitnessSet)
 import Shelley.Spec.Ledger.Keys (asWitness)
 
@@ -279,9 +283,9 @@ type instance Core.EraRule "DELEG" (VoltairePrototypeEra 'VoltairePrototype_One 
 
 type instance Core.EraRule "DELEGS" (VoltairePrototypeEra proto c) = Shelley.DELEGS (VoltairePrototypeEra proto c)
 
-type instance Core.EraRule "DELPL" (VoltairePrototypeEra proto c) = Shelley.DELPL (VoltairePrototypeEra proto c)
+type instance Core.EraRule "DELPL" (VoltairePrototypeEra 'VoltairePrototype_One c) = Shelley.DELPL (VoltairePrototypeEra 'VoltairePrototype_One c)
 
-type instance Core.EraRule "EPOCH" (VoltairePrototypeEra proto c) = Shelley.EPOCH (VoltairePrototypeEra proto c)
+type instance Core.EraRule "EPOCH" (VoltairePrototypeEra 'VoltairePrototype_One c) = Shelley.EPOCH (VoltairePrototypeEra 'VoltairePrototype_One c)
 
 type instance Core.EraRule "LEDGER" (VoltairePrototypeEra proto c) = Shelley.LEDGER (VoltairePrototypeEra proto c)
 
@@ -316,6 +320,12 @@ type instance Core.EraRule "UPEC" (VoltairePrototypeEra 'VoltairePrototype_One c
 
 -- These rules are defined anew in the voltaire prototype eras
 
+type instance Core.EraRule "EPOCH" (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  = Two.EPOCH (VoltairePrototypeEra 'VoltairePrototype_Two c)
+
+type instance Core.EraRule "DELPL" (VoltairePrototypeEra 'VoltairePrototype_Two c)
+  = Two.DELPL (VoltairePrototypeEra 'VoltairePrototype_Two c)
+
 type instance Core.EraRule "UPEC" (VoltairePrototypeEra 'VoltairePrototype_Two c)
   = Two.UPEC (VoltairePrototypeEra 'VoltairePrototype_Two c)
 
@@ -330,6 +340,20 @@ type instance Core.EraRule "UTXOW" (VoltairePrototypeEra proto c) = UTXOW (Volta
 -- that there will be a new set of transition rules that work differently
 -- from the protocol parameter update scheme of pre-Voltaire Shelley.
 type instance Core.EraRule "PPUP" (VoltairePrototypeEra proto c) = PPUP (VoltairePrototypeEra proto c)
+
+-- "Prototype two"-specific instances
+
+instance S.Embed
+  (Two.EPOCH (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+  (Shelley.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+  where
+  wrapFailed = Shelley.EpochFailure
+
+instance S.Embed
+  (Two.DELPL (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+  (Shelley.DELEGS (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+  where
+  wrapFailed = Shelley.DelplFailure
 
 class
   ( S.STS (Core.EraRule "BBODY" era)
@@ -358,7 +382,7 @@ class
   => AssertCoherentSTS era where
 
 instance AssertCoherentSTS (VoltairePrototypeEra 'VoltairePrototype_One CryptoClass.StandardCrypto)
--- instance AssertCoherentSTS (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto)
+instance AssertCoherentSTS (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto)
 
 instance
   ( CryptoClass.Crypto c,
