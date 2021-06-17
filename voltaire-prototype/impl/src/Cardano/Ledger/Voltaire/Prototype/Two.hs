@@ -48,6 +48,7 @@ import Control.SetAlgebra (dom, eval, (⊆), (⨃))
 import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
 import Data.Default.Class (Default(def))
+import Data.Coders
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
@@ -81,8 +82,11 @@ instance
   (Era era, FromCBOR (Shelley.PParamsDelta era)) =>
   FromCBOR (ProposalBody era)
   where
-  fromCBOR =
-    error "TODO"
+  fromCBOR = decode (Summands "ProposalBody" decode')
+    where
+      decode' 0 = SumD BodyPPUP <! From
+      decode' 1 = SumD BodyMIR <! From
+      decode' k = Invalid k
 
 bodyPParamsDelta :: ProposalBody era -> Maybe (Shelley.PParamsDelta era)
 bodyPParamsDelta (BodyPPUP pParams) = Just pParams

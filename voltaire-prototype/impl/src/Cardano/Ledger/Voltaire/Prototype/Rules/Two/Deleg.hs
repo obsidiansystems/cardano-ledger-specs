@@ -59,7 +59,6 @@ import Shelley.Spec.Ledger.LedgerState
     _rewards,
   )
 import Shelley.Spec.Ledger.PParams (ProtVer)
-import Shelley.Spec.Ledger.Serialization (decodeRecordSum)
 import Shelley.Spec.Ledger.Slot
   ( Duration (..),
     SlotNo,
@@ -73,6 +72,7 @@ import Shelley.Spec.Ledger.TxBody
     Ptr, PoolCert
   )
 import Cardano.Prelude (NFData)
+import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley
 
 -- | Same as Shelley's except no 'DCertMir'
 data DCert crypto
@@ -141,20 +141,53 @@ instance
 
 instance NoThunks (DelegPredicateFailure era)
 
--- | TODO
 instance
   (Typeable era, Era era, Typeable (Core.Script era)) =>
   ToCBOR (DelegPredicateFailure era)
   where
-  toCBOR = error "TODO"
+  toCBOR = toCBOR . toShelley
+    where
+    toShelley :: DelegPredicateFailure era -> Shelley.DelegPredicateFailure era
+    toShelley = \case
+      StakeKeyAlreadyRegisteredDELEG cred ->
+        Shelley.StakeKeyAlreadyRegisteredDELEG cred
+      StakeKeyNotRegisteredDELEG cred ->
+        Shelley.StakeKeyNotRegisteredDELEG cred
+      StakeKeyNonZeroAccountBalanceDELEG rewardBalance ->
+        Shelley.StakeKeyNonZeroAccountBalanceDELEG rewardBalance
+      StakeDelegationImpossibleDELEG cred ->
+        Shelley.StakeDelegationImpossibleDELEG cred
+      WrongCertificateTypeDELEG ->
+        Shelley.WrongCertificateTypeDELEG
+      GenesisKeyNotInMappingDELEG gkh ->
+        Shelley.GenesisKeyNotInMappingDELEG gkh
+      DuplicateGenesisDelegateDELEG kh ->
+        Shelley.DuplicateGenesisDelegateDELEG kh
+      DuplicateGenesisVRFDELEG vrf ->
+        Shelley.DuplicateGenesisVRFDELEG vrf
+      StakeKeyInRewardsDELEG cred ->
+        Shelley.StakeKeyInRewardsDELEG cred
 
--- | TODO
 instance
   (Era era, Typeable (Core.Script era)) =>
   FromCBOR (DelegPredicateFailure era)
   where
-  fromCBOR = decodeRecordSum "PredicateFailure (DELEG era)" $
-    error "TODO"
+  fromCBOR =
+    fromCBOR >>= fromShelley
+    where
+    fromShelley :: MonadFail m => Shelley.DelegPredicateFailure era -> m (DelegPredicateFailure era)
+    fromShelley lel = case lel of
+      Shelley.StakeKeyAlreadyRegisteredDELEG cred -> pure $ StakeKeyAlreadyRegisteredDELEG cred
+      Shelley.StakeKeyNotRegisteredDELEG cred -> pure $ StakeKeyNotRegisteredDELEG cred
+      Shelley.StakeKeyNonZeroAccountBalanceDELEG rewardBalance -> pure $ StakeKeyNonZeroAccountBalanceDELEG rewardBalance
+      Shelley.StakeDelegationImpossibleDELEG cred -> pure $ StakeDelegationImpossibleDELEG cred
+      Shelley.WrongCertificateTypeDELEG -> pure WrongCertificateTypeDELEG
+      Shelley.GenesisKeyNotInMappingDELEG gkh -> pure $ GenesisKeyNotInMappingDELEG gkh
+      Shelley.DuplicateGenesisDelegateDELEG kh -> pure $ DuplicateGenesisDelegateDELEG kh
+      Shelley.DuplicateGenesisVRFDELEG vrf -> pure $ DuplicateGenesisVRFDELEG vrf
+      Shelley.StakeKeyInRewardsDELEG cred -> pure $ StakeKeyInRewardsDELEG cred
+      shelleyDelegPredicateFailure ->
+        fail $ "Voltaire does not support the Shelley failure: " <> show shelleyDelegPredicateFailure
 
 -- | Same as Shelley's but without the MIR-related stuff
 delegationTransition ::
