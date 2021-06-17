@@ -46,6 +46,7 @@ import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg as Two
 import qualified Cardano.Ledger.Voltaire.Prototype.Rules.Two.Upec as Two
 import Control.DeepSeq (deepseq)
 import Control.SetAlgebra (eval, (◁))
+import qualified Control.State.Transition as S
 import Data.Default.Class (def, Default)
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -292,9 +293,9 @@ type instance Core.EraRule "NEWEPOCH" (VoltairePrototypeEra proto c) = Shelley.N
 
 type instance Core.EraRule "NEWPP" (VoltairePrototypeEra proto c) = Shelley.NEWPP (VoltairePrototypeEra proto c)
 
-type instance Core.EraRule "OCERT" (VoltairePrototypeEra proto c) = Shelley.OCERT (VoltairePrototypeEra proto c)
+type instance Core.EraRule "OCERT" (VoltairePrototypeEra proto c) = Shelley.OCERT c
 
-type instance Core.EraRule "OVERLAY" (VoltairePrototypeEra proto c) = Shelley.OVERLAY (VoltairePrototypeEra proto c)
+type instance Core.EraRule "OVERLAY" (VoltairePrototypeEra proto c) = Shelley.OVERLAY c
 
 type instance Core.EraRule "POOL" (VoltairePrototypeEra proto c) = Shelley.POOL (VoltairePrototypeEra proto c)
 
@@ -329,6 +330,35 @@ type instance Core.EraRule "UTXOW" (VoltairePrototypeEra proto c) = UTXOW (Volta
 -- that there will be a new set of transition rules that work differently
 -- from the protocol parameter update scheme of pre-Voltaire Shelley.
 type instance Core.EraRule "PPUP" (VoltairePrototypeEra proto c) = PPUP (VoltairePrototypeEra proto c)
+
+class
+  ( S.STS (Core.EraRule "BBODY" era)
+  , S.STS (Core.EraRule "DELEG" era)
+  , S.STS (Core.EraRule "DELEGS" era)
+  , S.STS (Core.EraRule "EPOCH" era)
+  , S.STS (Core.EraRule "LEDGER" era)
+  , S.STS (Core.EraRule "LEDGERS" era)
+  , S.STS (Core.EraRule "MIR" era)
+  , S.STS (Core.EraRule "NEWEPOCH" era)
+  , S.STS (Core.EraRule "NEWPP" era)
+  , S.STS (Core.EraRule "OCERT" era)
+  , S.STS (Core.EraRule "OVERLAY" era)
+  , S.STS (Core.EraRule "POOL" era)
+  , S.STS (Core.EraRule "POOLREAP" era)
+  , S.STS (Core.EraRule "PPUP" era)
+  , S.STS (Core.EraRule "RUPD" era)
+  , S.STS (Core.EraRule "SNAP" era)
+  , S.STS (Core.EraRule "TICK" era)
+  , S.STS (Core.EraRule "TICKF" era)
+  , S.STS (Core.EraRule "TICKN" era)
+  , S.STS (Core.EraRule "UPEC" era)
+  , S.STS (Core.EraRule "UTXO" era)
+  , S.STS (Core.EraRule "UTXOW" era)
+  )
+  => AssertCoherentSTS era where
+
+instance AssertCoherentSTS (VoltairePrototypeEra 'VoltairePrototype_One CryptoClass.StandardCrypto)
+-- instance AssertCoherentSTS (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto)
 
 instance
   ( CryptoClass.Crypto c,
