@@ -12,11 +12,10 @@
 
 module Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
   ( DELEG,
-    DCert (..),
+    Shelley.DCert (..),
     DelegEnv (..),
     PredicateFailure,
     DelegPredicateFailure (..),
-    fromShelleyCert,
   )
 where
 
@@ -69,25 +68,9 @@ import Shelley.Spec.Ledger.TxBody
   ( DelegCert (..),
     Delegation (..),
     GenesisDelegCert (..),
-    Ptr, PoolCert
+    Ptr
   )
-import Cardano.Prelude (NFData)
 import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley
-
--- | Same as Shelley's except no 'DCertMir'
-data DCert crypto
-  = DCertDeleg !(DelegCert crypto)
-  | DCertPool !(PoolCert crypto)
-  | DCertGenesis !(GenesisDelegCert crypto)
-  deriving (Show, Generic, Eq, NFData)
-
-instance NoThunks (DCert crypto)
-
-fromShelleyCert :: Shelley.DCert crypto -> DCert crypto
-fromShelleyCert (Shelley.DCertDeleg dc) = DCertDeleg dc
-fromShelleyCert (Shelley.DCertPool pc) = DCertPool pc
-fromShelleyCert (Shelley.DCertGenesis gdc) = DCertGenesis gdc
-fromShelleyCert (Shelley.DCertMir dc) = error $ "BUG: Prototype two does not support MIR-certificates. " <> show dc
 
 data DELEG era
 
@@ -123,6 +106,7 @@ data DelegPredicateFailure era
       !(KeyHash 'GenesisDelegate (Crypto era)) -- Keyhash which is already delegated to
   | DuplicateGenesisVRFDELEG
       !(Hash (Crypto era) (VerKeyVRF (Crypto era))) --VRF KeyHash which is already delegated to
+  | MirCertNotSupported (Shelley.MIRCert (Crypto era))
   deriving (Show, Eq, Generic)
 
 instance
@@ -132,7 +116,7 @@ instance
   STS (DELEG era)
   where
   type State (DELEG era) = DState (Crypto era)
-  type Signal (DELEG era) = DCert (Crypto era)
+  type Signal (DELEG era) = Shelley.DCert (Crypto era)
   type Environment (DELEG era) = DelegEnv era
   type BaseM (DELEG era) = ShelleyBase
   type PredicateFailure (DELEG era) = DelegPredicateFailure era
@@ -167,6 +151,8 @@ instance
         Shelley.DuplicateGenesisVRFDELEG vrf
       StakeKeyInRewardsDELEG cred ->
         Shelley.StakeKeyInRewardsDELEG cred
+      MirCertNotSupported _ ->
+        error "TODO"
 
 instance
   (Era era, Typeable (Core.Script era)) =>
@@ -198,7 +184,7 @@ delegationTransition ::
 delegationTransition = do
   TRC (DelegEnv slot ptr _, ds, c) <- judgmentContext
   case c of
-    DCertDeleg (RegKey hk) -> do
+    Shelley.DCertDeleg (RegKey hk) -> do
       eval (hk ∉ dom (_rewards ds)) ?! StakeKeyAlreadyRegisteredDELEG hk
 
       pure $
@@ -206,7 +192,7 @@ delegationTransition = do
           { _rewards = eval (_rewards ds ∪ (singleton hk mempty)),
             _ptrs = eval (_ptrs ds ∪ (singleton ptr hk))
           }
-    DCertDeleg (DeRegKey hk) -> do
+    Shelley.DCertDeleg (DeRegKey hk) -> do
       -- note that pattern match is used instead of cwitness, as in the spec
       eval (hk ∈ dom (_rewards ds)) ?! StakeKeyNotRegisteredDELEG hk
 
@@ -219,7 +205,7 @@ delegationTransition = do
             _delegations = eval (setSingleton hk ⋪ _delegations ds),
             _ptrs = eval (_ptrs ds ⋫ setSingleton hk)
           }
-    DCertDeleg (Delegate (Delegation hk dpool)) -> do
+    Shelley.DCertDeleg (Delegate (Delegation hk dpool)) -> do
       -- note that pattern match is used instead of cwitness and dpool, as in the spec
       eval (hk ∈ dom (_rewards ds)) ?! StakeDelegationImpossibleDELEG hk
 
@@ -227,7 +213,7 @@ delegationTransition = do
         ds
           { _delegations = eval (_delegations ds ⨃ (singleton hk dpool))
           }
-    DCertGenesis (GenesisDelegCert gkh vkh vrf) -> do
+    Shelley.DCertGenesis (GenesisDelegCert gkh vkh vrf) -> do
       sp <- liftSTS $ asks stabilityWindow
       -- note that pattern match is used instead of genesisDeleg, as in the spec
       let s' = slot +* Duration sp
@@ -256,6 +242,9 @@ delegationTransition = do
         ds
           { _fGenDelegs = eval ((_fGenDelegs ds) ⨃ (singleton (FutureGenDeleg s' gkh) (GenDelegPair vkh vrf)))
           }
-    DCertPool _ -> do
+    Shelley.DCertPool _ -> do
       failBecause WrongCertificateTypeDELEG -- this always fails
+      pure ds
+    Shelley.DCertMir mirCert -> do
+      failBecause $ MirCertNotSupported mirCert
       pure ds

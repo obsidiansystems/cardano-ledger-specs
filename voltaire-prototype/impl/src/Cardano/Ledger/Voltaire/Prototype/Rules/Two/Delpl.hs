@@ -97,22 +97,22 @@ delplTransition = do
       pure $ d {_pstate = ps}
     DCertGenesis (GenesisDelegCert {}) -> do
       ds <-
-        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, Two.fromShelleyCert c)
+        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, c)
       pure $ d {_dstate = ds}
     DCertDeleg (RegKey _) -> do
       ds <-
-        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, Two.fromShelleyCert c)
+        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, c)
       pure $ d {_dstate = ds}
     DCertDeleg (DeRegKey _) -> do
       ds <-
-        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, Two.fromShelleyCert c)
+        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, c)
       pure $ d {_dstate = ds}
     DCertDeleg (Delegate _) -> do
       ds <-
-        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, Two.fromShelleyCert c)
+        trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, c)
       pure $ d {_dstate = ds}
     DCertMir _ -> do
-      ds <- trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, Two.fromShelleyCert c)
+      ds <- trans @(Core.EraRule "DELEG" era) $ TRC (Two.DelegEnv slot ptr pp, _dstate d, c)
       pure $ d {_dstate = ds}
 
 instance
