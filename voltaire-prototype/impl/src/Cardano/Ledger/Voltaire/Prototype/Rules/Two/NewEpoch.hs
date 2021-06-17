@@ -14,7 +14,7 @@
 
 -- |
 -- Module      : Cardano.Ledger.Voltaire.Prototype.Rules.Two.NewEpoch
--- Description : Same as 'Shelley.Spec.Ledger.STS.NewEpoch' except does fire "MIR" rule.
+-- Description : Same as 'Shelley.Spec.Ledger.STS.NewEpoch' except does NOT fire "MIR" rule.
 module Cardano.Ledger.Voltaire.Prototype.Rules.Two.NewEpoch
   ( NEWEPOCH,
     NewEpochPredicateFailure (..),
