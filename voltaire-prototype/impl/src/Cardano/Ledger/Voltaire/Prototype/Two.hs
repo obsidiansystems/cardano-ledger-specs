@@ -9,6 +9,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DerivingVia #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-} -- Shelley.MIRCert instances
 module Cardano.Ledger.Voltaire.Prototype.Two
 ( module Cardano.Ledger.Voltaire.Prototype.Two
 , Shelley.MIRCert
@@ -49,6 +51,7 @@ import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.LedgerState (pvCanFollow)
 import Data.Default.Class (Default(def))
 import Data.Coders
+import Generic.Data (Generically(..))
 
 -- | The second prototype implements the Shelley PPUP rules and MIRs
 data ProposalBody era
@@ -59,11 +62,11 @@ data ProposalBody era
 
 deriving instance Eq (Shelley.PParamsDelta era) => Eq (ProposalBody era)
 
--- | TODO: actually implement orphan (required because a ProposalId must be orderable)
-instance Ord (Shelley.MIRCert crypto) where
-  compare = error "TODO: Ord Shelley.MIRCert"
-
 deriving instance Ord (Shelley.PParamsDelta era) => Ord (ProposalBody era)
+
+deriving via (Generically (Shelley.MIRCert crypto)) instance Ord (Shelley.MIRCert crypto)
+deriving via (Generically (Shelley.MIRTarget crypto)) instance Ord (Shelley.MIRTarget crypto)
+deriving via (Generically (Shelley.MIRPot)) instance Ord (Shelley.MIRPot)
 
 deriving instance Show (Shelley.PParamsDelta era) => Show (ProposalBody era)
 

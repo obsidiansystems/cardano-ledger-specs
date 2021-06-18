@@ -75,5 +75,6 @@ library
     strict-containers,
     -- text,
     transformers,
-    groups
+    groups,
+    generic-data,
   hs-source-dirs: src
