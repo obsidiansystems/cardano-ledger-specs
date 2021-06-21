@@ -346,27 +346,27 @@ type instance Core.EraRule "PPUP" (VoltairePrototypeEra proto c) = PPUP (Voltair
 
 -- "Prototype two"-specific instances
 
-instance S.Embed
-  (Two.EPOCH (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
-  (Two.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+instance CryptoClass.Crypto c => S.Embed
+  (Two.EPOCH (VoltairePrototypeEra 'VoltairePrototype_Two c))
+  (Two.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two c))
   where
   wrapFailed = Two.EpochFailure
 
-instance S.Embed
-  (Two.DELPL (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
-  (Shelley.DELEGS (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+instance CryptoClass.Crypto c => S.Embed
+  (Two.DELPL (VoltairePrototypeEra 'VoltairePrototype_Two c))
+  (Shelley.DELEGS (VoltairePrototypeEra 'VoltairePrototype_Two c))
   where
   wrapFailed = Shelley.DelplFailure
 
-instance S.Embed
-  (Two.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
-  (Shelley.TICK (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+instance CryptoClass.Crypto c => S.Embed
+  (Two.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two c))
+  (Shelley.TICK (VoltairePrototypeEra 'VoltairePrototype_Two c))
   where
   wrapFailed = Shelley.NewEpochFailure
 
-instance S.Embed
-  (Two.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
-  (Shelley.TICKF (VoltairePrototypeEra 'VoltairePrototype_Two CryptoClass.StandardCrypto))
+instance CryptoClass.Crypto c => S.Embed
+  (Two.NEWEPOCH (VoltairePrototypeEra 'VoltairePrototype_Two c))
+  (Shelley.TICKF (VoltairePrototypeEra 'VoltairePrototype_Two c))
   where
   wrapFailed = Shelley.TickfNewEpochFailure
 
