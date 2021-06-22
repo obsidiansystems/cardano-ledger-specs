@@ -39,6 +39,7 @@ library
     Cardano.Ledger.Voltaire.Prototype.One
     Cardano.Ledger.Voltaire.Prototype.One.Translation
     Cardano.Ledger.Voltaire.Prototype.Two
+    Cardano.Ledger.Voltaire.Prototype.Two.Translation
     Cardano.Ledger.Voltaire.Prototype.Class
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxo
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxow
