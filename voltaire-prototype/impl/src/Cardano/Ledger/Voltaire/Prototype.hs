@@ -11,6 +11,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Cardano.Ledger.Voltaire.Prototype where
 
+import qualified Cardano.Ledger.Mary as Mary
 import Cardano.Ledger.AuxiliaryData
   ( AuxiliaryDataHash (..),
     ValidateAuxiliaryData (..),
@@ -20,7 +21,7 @@ import qualified Cardano.Ledger.Crypto as CryptoClass
 import Cardano.Ledger.Era (Crypto, Era, SupportsSegWit (..), ValidateScript (..), PreviousEra)
 import qualified Cardano.Ledger.Mary.Value as V
 import Cardano.Ledger.SafeHash (hashAnnotated)
-import Cardano.Ledger.Shelley (nativeMultiSigTag, ShelleyEra)
+import Cardano.Ledger.Shelley (nativeMultiSigTag)
 import Cardano.Ledger.Shelley.Constraints
   ( UsesPParams (..),
     UsesTxBody,
@@ -118,7 +119,7 @@ instance (CryptoClass.Crypto c) => VoltaireClass (VoltairePrototypeEra 'Voltaire
     updateKeys = Map.map Shelley.genDelegKeyHash updateKeys'
     submissionSeq (Submissions seq') = seq'
 
-type instance PreviousEra (VoltairePrototypeEra 'VoltairePrototype_One c) = ShelleyEra c
+type instance PreviousEra (VoltairePrototypeEra 'VoltairePrototype_One c) = Mary.MaryEra c
 
 -- Two
 

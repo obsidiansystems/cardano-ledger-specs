@@ -37,6 +37,7 @@ library
   exposed-modules:
     Cardano.Ledger.Voltaire.Prototype
     Cardano.Ledger.Voltaire.Prototype.One
+    Cardano.Ledger.Voltaire.Prototype.One.Translation
     Cardano.Ledger.Voltaire.Prototype.Two
     Cardano.Ledger.Voltaire.Prototype.Class
     Cardano.Ledger.Voltaire.Prototype.Rules.Utxo
