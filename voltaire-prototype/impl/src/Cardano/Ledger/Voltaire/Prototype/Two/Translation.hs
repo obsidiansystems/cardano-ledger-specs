@@ -24,30 +24,26 @@ import Cardano.Binary
     fromCBOR,
     serialize,
   )
-import qualified Cardano.Ledger.Voltaire.Prototype as One
+import qualified Cardano.Ledger.Voltaire.Prototype as Prototype
+import qualified Cardano.Ledger.Voltaire.Prototype.Two as Two
 import Cardano.Ledger.Crypto (Crypto)
 import Cardano.Ledger.Era hiding (Crypto)
-import Cardano.Ledger.ShelleyMA.AuxiliaryData
-  ( AuxiliaryData (..),
-    pattern AuxiliaryData,
-  )
 import Control.Monad.Except (throwError)
 import Data.Coerce (coerce)
 import qualified Data.Map.Strict as Map
 import Shelley.Spec.Ledger.API hiding (Metadata, TxBody)
-import Shelley.Spec.Ledger.Tx
-  ( decodeWits,
-  )
 
 --------------------------------------------------------------------------------
--- Trivially translate from Mary to Voltaire prototype One (no changes)
+-- Translate from Voltaire prototype One to Two
+--
+-- The only non-trivial change is translating from One's PPUPState to that of Two.
 --------------------------------------------------------------------------------
 
-type VoltaireOne c = One.VoltairePrototypeEra 'One.VoltairePrototype_One c
+type VoltaireTwo c = Prototype.VoltairePrototypeEra 'Prototype.VoltairePrototype_Two c
 
-type instance TranslationContext (VoltaireOne c) = ()
+type instance TranslationContext (VoltaireTwo c) = ()
 
-instance Crypto c => TranslateEra (VoltaireOne c) NewEpochState where
+instance Crypto c => TranslateEra (VoltaireTwo c) NewEpochState where
   translateEra ctxt nes =
     return $
       NewEpochState
@@ -59,14 +55,14 @@ instance Crypto c => TranslateEra (VoltaireOne c) NewEpochState where
           nesPd = nesPd nes
         }
 
-instance Crypto c => TranslateEra (VoltaireOne c) Tx where
-  type TranslationError (VoltaireOne c) Tx = DecoderError
+instance Crypto c => TranslateEra (VoltaireTwo c) Tx where
+  type TranslationError (VoltaireTwo c) Tx = DecoderError
   translateEra _ctx tx =
     case decodeAnnotator "tx" fromCBOR (serialize tx) of
       Right newTx -> pure newTx
       Left decoderError -> throwError decoderError
 
-instance Crypto c => TranslateEra (VoltaireOne c) ShelleyGenesis where
+instance Crypto c => TranslateEra (VoltaireTwo c) ShelleyGenesis where
   translateEra ctxt genesis =
     return
       ShelleyGenesis
@@ -91,9 +87,9 @@ instance Crypto c => TranslateEra (VoltaireOne c) ShelleyGenesis where
 -- Auxiliary instances and functions
 --------------------------------------------------------------------------------
 
-instance (Crypto c, Functor f) => TranslateEra (VoltaireOne c) (PParams' f)
+instance (Crypto c, Functor f) => TranslateEra (VoltaireTwo c) (PParams' f)
 
-instance Crypto c => TranslateEra (VoltaireOne c) EpochState where
+instance Crypto c => TranslateEra (VoltaireTwo c) EpochState where
   translateEra ctxt es =
     return
       EpochState
@@ -105,7 +101,7 @@ instance Crypto c => TranslateEra (VoltaireOne c) EpochState where
           esNonMyopic = esNonMyopic es
         }
 
-instance Crypto c => TranslateEra (VoltaireOne c) LedgerState where
+instance Crypto c => TranslateEra (VoltaireTwo c) LedgerState where
   translateEra ctxt ls =
     return
       LedgerState
@@ -113,46 +109,30 @@ instance Crypto c => TranslateEra (VoltaireOne c) LedgerState where
           _delegationState = _delegationState ls
         }
 
-instance Crypto c => TranslateEra (VoltaireOne c) ProposedPPUpdates where
-  translateEra ctxt (ProposedPPUpdates ppup) =
-    return $ ProposedPPUpdates $ Map.map (translateEra' ctxt) ppup
-
-instance Crypto c => TranslateEra (VoltaireOne c) PPUPState where
-  translateEra ctxt ps =
-    return
-      PPUPState
-        { proposals = translateEra' ctxt $ proposals ps,
-          futureProposals = translateEra' ctxt $ futureProposals ps
-        }
-
-instance Crypto c => TranslateEra (VoltaireOne c) UTxOState where
+instance Crypto c => TranslateEra (VoltaireTwo c) UTxOState where
   translateEra ctxt us =
     return
       UTxOState
         { _utxo = translateEra' ctxt $ _utxo us,
           _deposited = _deposited us,
           _fees = _fees us,
-          _ppups = translateEra' ctxt $ _ppups us
+          _ppups = convertPpupState ctxt $ _ppups us
         }
 
-instance Crypto c => TranslateEra (VoltaireOne c) TxOut where
+convertPpupState
+  :: Crypto c
+  => TranslationContext (VoltaireTwo c)
+  -> PPUPState (Prototype.VoltairePrototypeEra 'Prototype.VoltairePrototype_One c)
+  -> Two.PPUPState (VoltaireTwo c)
+convertPpupState ctxt (PPUPState (ProposedPPUpdates propMap) (ProposedPPUpdates futurePropMap)) =
+  Two.PPUPState (convert propMap) (convert futurePropMap)
+ where
+  convert = Two.ProposedUpdates . fmap Two.BodyPPUP . Map.map (translateEra' ctxt)
+
+instance Crypto c => TranslateEra (VoltaireTwo c) TxOut where
   translateEra () (TxOutCompact addr cfval) =
     pure $ TxOutCompact (coerce addr) cfval
 
-instance Crypto c => TranslateEra (VoltaireOne c) UTxO where
+instance Crypto c => TranslateEra (VoltaireTwo c) UTxO where
   translateEra ctxt utxo =
     return $ UTxO $ Map.map (translateEra' ctxt) $ unUTxO utxo
-
-instance Crypto c => TranslateEra (VoltaireOne c) WitnessSet where
-  type TranslationError (VoltaireOne c) WitnessSet = DecoderError
-  translateEra _ctx ws =
-    case decodeAnnotator "witnessSet" decodeWits (serialize ws) of
-      Right new -> pure new
-      Left decoderError -> throwError decoderError
-
-instance Crypto c => TranslateEra (VoltaireOne c) Update where
-  translateEra _ (Update pp en) = pure $ Update (coerce pp) en
-
-instance Crypto c => TranslateEra (VoltaireOne c) AuxiliaryData where
-  translateEra _ (AuxiliaryData md as) =
-    pure $ AuxiliaryData md as
