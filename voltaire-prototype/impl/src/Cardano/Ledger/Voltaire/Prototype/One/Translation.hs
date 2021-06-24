@@ -7,6 +7,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 {- We disable warnings for name shadowing because of
 https://gitlab.haskell.org/ghc/ghc/-/issues/14630, which means that we get
 shadowing warnings for the named field puns when used with a pattern synonym.
@@ -38,9 +39,34 @@ import Shelley.Spec.Ledger.API hiding (Metadata, TxBody)
 import Shelley.Spec.Ledger.Tx
   ( decodeWits,
   )
+import qualified Cardano.Ledger.ShelleyMA.Timelocks as Timelocks
+import Cardano.Ledger.Allegra (AllegraEra)
+import Cardano.Ledger.Shelley (ShelleyEra)
+import Cardano.Ledger.Mary (MaryEra)
+import Cardano.Ledger.Allegra.Translation ()
+import Cardano.Ledger.Mary.Translation ()
+import Control.Monad.Except (Except)
+
+-- | Translate from Shelley to Mary by first translating
+--   from Shelley to Allegra and then from Allegra to Mary.
+shelleyToMary
+  :: forall f c.
+     ( TranslateEra (AllegraEra c) f
+     , TranslateEra (MaryEra c) f
+     , TranslationError (MaryEra c) f ~ TranslationError (AllegraEra c) f
+     )
+  => TranslationContext (MaryEra c)
+  -> f (ShelleyEra c)
+  -> Except (TranslationError (MaryEra c) f) (f (MaryEra c))
+shelleyToMary _ state =
+  translateEra @(AllegraEra c) () state >>= translateEra @(MaryEra c) ()
 
 --------------------------------------------------------------------------------
--- Trivially translate from Mary to Voltaire prototype One (no changes)
+-- Translate from Shelley to Voltaire prototype One.
+--
+-- Since the only difference between Voltaire prototype One and Mary is the era
+-- name, we first translate from Shelley to Mary using 'shelleyToMary' and then
+-- simply cast the result of this translation.
 --------------------------------------------------------------------------------
 
 type VoltaireOne c = One.VoltairePrototypeEra 'One.VoltairePrototype_One c
@@ -61,8 +87,9 @@ instance Crypto c => TranslateEra (VoltaireOne c) NewEpochState where
 
 instance Crypto c => TranslateEra (VoltaireOne c) Tx where
   type TranslationError (VoltaireOne c) Tx = DecoderError
-  translateEra _ctx tx =
-    case decodeAnnotator "tx" fromCBOR (serialize tx) of
+  translateEra _ctx tx = do
+    tx' <- shelleyToMary _ctx tx
+    case decodeAnnotator "tx" fromCBOR (serialize tx') of
       Right newTx -> pure newTx
       Left decoderError -> throwError decoderError
 
@@ -136,7 +163,8 @@ instance Crypto c => TranslateEra (VoltaireOne c) UTxOState where
         }
 
 instance Crypto c => TranslateEra (VoltaireOne c) TxOut where
-  translateEra () (TxOutCompact addr cfval) =
+  translateEra () txOut = do
+    TxOutCompact addr cfval <- shelleyToMary () txOut
     pure $ TxOutCompact (coerce addr) cfval
 
 instance Crypto c => TranslateEra (VoltaireOne c) UTxO where
@@ -145,14 +173,20 @@ instance Crypto c => TranslateEra (VoltaireOne c) UTxO where
 
 instance Crypto c => TranslateEra (VoltaireOne c) WitnessSet where
   type TranslationError (VoltaireOne c) WitnessSet = DecoderError
-  translateEra _ctx ws =
-    case decodeAnnotator "witnessSet" decodeWits (serialize ws) of
+  translateEra _ctx ws = do
+    ws' <- shelleyToMary _ctx ws
+    case decodeAnnotator "witnessSet" decodeWits (serialize ws') of
       Right new -> pure new
       Left decoderError -> throwError decoderError
 
 instance Crypto c => TranslateEra (VoltaireOne c) Update where
-  translateEra _ (Update pp en) = pure $ Update (coerce pp) en
+  translateEra ctxt update = do
+    Update pp en <- shelleyToMary ctxt update
+    pure $ Update (coerce pp) en
 
 instance Crypto c => TranslateEra (VoltaireOne c) AuxiliaryData where
   translateEra _ (AuxiliaryData md as) =
-    pure $ AuxiliaryData md as
+    pure $ AuxiliaryData md (fmap Timelocks.translate as)
+    -- For some reason GHC complains if we use 'shelleyToMary' to
+    -- translate 'AuxiliaryData'. Therefore we use a dedicated
+    -- function for this ('Timelocks.translate').
