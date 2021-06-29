@@ -184,6 +184,10 @@ filterModelValueVars (ModelValue_MA x ys) = do
           ScriptFeatureTag_None -> Nothing
           ScriptFeatureTag_Simple -> Just $ ModelScript_Timelock t
           ScriptFeatureTag_PlutusV1 -> Just $ ModelScript_Timelock t
+        ModelScript_PlutusV1 t -> case reifyScriptFeature (Proxy @(ScriptFeature c)) of
+          ScriptFeatureTag_None -> Nothing
+          ScriptFeatureTag_Simple -> Nothing
+          ScriptFeatureTag_PlutusV1 -> Just $ ModelScript_PlutusV1 t
 
   ModelValue_MA x . Map.fromList <$> (traverse . _1) f (Map.toList ys)
 

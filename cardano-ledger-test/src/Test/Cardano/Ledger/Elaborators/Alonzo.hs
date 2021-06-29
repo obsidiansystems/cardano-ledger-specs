@@ -78,6 +78,7 @@ instance
               ]
 
   makeTimelockScript _ = Alonzo.TimelockScript
+  makePlutusScript _ = id -- Alonzo.PlutusScript
 
   makeTxBody (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint)) =
     Alonzo.TxBody

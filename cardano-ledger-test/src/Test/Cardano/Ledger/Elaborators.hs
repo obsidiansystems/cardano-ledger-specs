@@ -27,6 +27,7 @@ import qualified Cardano.Crypto.Hash.Class as Hash
 -- TODO use CPS'ed writer
 
 import qualified Cardano.Crypto.VRF.Class (VerKeyVRF)
+import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import Cardano.Ledger.BaseTypes
 import Cardano.Ledger.Coin
 import qualified Cardano.Ledger.Core as Core
@@ -569,6 +570,17 @@ class
     Core.Script era
   makeTimelockScript _ = absurd
 
+  makePlutusScript ::
+    proxy era ->
+    IfSupportsPlutus (Alonzo.Script era) (EraScriptFeature era) ->
+    Core.Script era
+  default makePlutusScript ::
+    (IfSupportsPlutus (Alonzo.Script era) (EraScriptFeature era) ~ Void) =>
+    proxy era ->
+    IfSupportsPlutus (Alonzo.Script era) (EraScriptFeature era) ->
+    Core.Script era
+  makePlutusScript _ = absurd
+
   elaborateScript ::
     ModelScript (EraScriptFeature era) ->
     (NewEpochState era, EraElaboratorState era) ->
@@ -583,6 +595,8 @@ class
       (NewEpochState era, EraElaboratorState era)
     )
   elaborateScript ms0 = State.runState $ case ms0 of
+    ModelScript_PlutusV1 ms ->
+      pure $ makePlutusScript (Proxy :: Proxy era) (elaborateModelScript ms)
     ModelScript_Timelock ms -> do
       x <- elaborateModelTimelock (zoom _2 . getScriptWitnessFor (Proxy :: Proxy era)) ms
       pure $ makeTimelockScript (Proxy :: Proxy era) x

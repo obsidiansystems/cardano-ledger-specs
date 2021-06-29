@@ -11,12 +11,14 @@
 
 module Test.Cardano.Ledger.ModelChain.Script where
 
+import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import qualified Cardano.Ledger.Crypto as C
 import Cardano.Ledger.Keys
 import Cardano.Ledger.ShelleyMA.Timelocks
 import Cardano.Slotting.Slot hiding (at)
 import qualified Data.Sequence.Strict as StrictSeq
 import Data.Void
+import Numeric.Natural (Natural)
 import Test.Cardano.Ledger.ModelChain.Address
 
 data TyScriptFeature = TyScriptFeature
@@ -26,6 +28,18 @@ data TyScriptFeature = TyScriptFeature
 
 data ModelScript (k :: TyScriptFeature) where
   ModelScript_Timelock :: ModelTimelock -> ModelScript ('TyScriptFeature 'True x)
+  ModelScript_PlutusV1 :: ModelPlutusScript -> ModelScript ('TyScriptFeature x 'True)
+
+deriving instance Eq (ModelScript k)
+
+deriving instance Ord (ModelScript k)
+
+deriving instance Show (ModelScript k)
+
+data ModelPlutusScript
+  = ModelPlutusScript_AlwaysSucceeds Natural
+  | ModelPlutusScript_AlwaysFails Natural
+  deriving (Eq, Ord, Show)
 
 modelScriptNeededSigs :: ModelScript k -> [ModelAddress]
 modelScriptNeededSigs (ModelScript_Timelock x0) = go x0
@@ -37,12 +51,7 @@ modelScriptNeededSigs (ModelScript_Timelock x0) = go x0
       ModelTimelock_MOfN n xs -> go =<< take n xs
       ModelTimelock_TimeStart _ -> []
       ModelTimelock_TimeExpire _ -> []
-
-deriving instance Eq (ModelScript k)
-
-deriving instance Ord (ModelScript k)
-
-deriving instance Show (ModelScript k)
+modelScriptNeededSigs (ModelScript_PlutusV1 {}) = []
 
 data ScriptFeatureTag (s :: TyScriptFeature) where
   ScriptFeatureTag_None :: ScriptFeatureTag ('TyScriptFeature 'False 'False)
@@ -66,6 +75,10 @@ hasKnownScriptFeature = \case
 type family IfSupportsTimelock a (k :: TyScriptFeature) where
   IfSupportsTimelock a ('TyScriptFeature 'True _) = a
   IfSupportsTimelock _ ('TyScriptFeature 'False _) = Void
+
+type family IfSupportsPlutus a (k :: TyScriptFeature) where
+  IfSupportsPlutus a ('TyScriptFeature _ 'True) = a
+  IfSupportsPlutus _ ('TyScriptFeature _ 'False) = Void
 
 type family Or (a :: Bool) (b :: Bool) :: Bool where
   Or 'False b = b
@@ -109,3 +122,10 @@ elaborateModelTimelock f = go
       ModelTimelock_MOfN m xs -> RequireMOf m . StrictSeq.fromList <$> traverse go xs
       ModelTimelock_TimeStart slotNo -> pure $ RequireTimeStart slotNo
       ModelTimelock_TimeExpire slotNo -> pure $ RequireTimeExpire slotNo
+
+elaborateModelScript ::
+  ModelPlutusScript ->
+  Alonzo.Script era
+elaborateModelScript = \case
+  ModelPlutusScript_AlwaysSucceeds n -> Alonzo.alwaysSucceeds n
+  ModelPlutusScript_AlwaysFails n -> Alonzo.alwaysFails n
