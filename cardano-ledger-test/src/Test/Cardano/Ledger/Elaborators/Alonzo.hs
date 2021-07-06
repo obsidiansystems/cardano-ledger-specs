@@ -17,6 +17,8 @@ import Cardano.Ledger.Alonzo.Rules.Utxo
 import Cardano.Ledger.Alonzo.Rules.Utxow
 import Cardano.Ledger.Alonzo.Scripts (CostModel (..), ExUnits (..), Prices (..))
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
+import Cardano.Ledger.Alonzo.Language (Language(..))
+import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import Cardano.Ledger.Alonzo.Translation ()
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
@@ -80,7 +82,7 @@ instance
   makeTimelockScript _ = Alonzo.TimelockScript
   makePlutusScript _ = id -- Alonzo.PlutusScript
 
-  makeTxBody (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint)) =
+  makeTxBody nes (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint) (SupportsPlutus redeemers)) =
     Alonzo.TxBody
       { Alonzo.inputs = ins,
         Alonzo.collateral = ins,
@@ -92,18 +94,18 @@ instance
         Alonzo.txUpdates = SNothing,
         Alonzo.reqSignerHashes = Set.empty,
         Alonzo.mint = mint,
-        Alonzo.wppHash = SNothing,
+        Alonzo.wppHash = redeemers >>= uncurry (Alonzo.hashWitnessPPData (LedgerState.esPp . LedgerState.nesEs $ nes) (Set.singleton PlutusV1)),
         Alonzo.adHash = SNothing,
         Alonzo.txnetworkid = SNothing -- SJust Testnet
       }
 
-  makeTx _ realTxBody (TxWitnessArguments wits (SupportsScript ScriptFeatureTag_PlutusV1 scripts)) =
+  makeTx _ realTxBody (TxWitnessArguments wits (SupportsScript ScriptFeatureTag_PlutusV1 scripts) (SupportsPlutus (rdmr, dats))) =
     let witSet =
           Alonzo.TxWitness
             { Alonzo.txwitsVKey = wits,
               Alonzo.txwitsBoot = Set.empty,
               Alonzo.txscripts = scripts,
-              Alonzo.txdats = mempty,
-              Alonzo.txrdmrs = Alonzo.Redeemers Map.empty
+              Alonzo.txdats = dats,
+              Alonzo.txrdmrs = rdmr
             }
      in (Alonzo.ValidatedTx realTxBody witSet (Alonzo.IsValidating True) SNothing)

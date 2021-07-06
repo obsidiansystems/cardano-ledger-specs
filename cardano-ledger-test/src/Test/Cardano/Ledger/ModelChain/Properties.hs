@@ -79,6 +79,9 @@ purpleModelScript = ModelScript_Timelock $ ModelTimelock_AllOf []
 bobCoinScript :: ModelScript ('TyScriptFeature 'True x)
 bobCoinScript = ModelScript_Timelock $ ModelTimelock_Signature "BobCoin"
 
+modelPlutusScript :: Natural -> ModelScript ('TyScriptFeature x 'True)
+modelPlutusScript = ModelScript_PlutusV1 . ModelPlutusScript_AlwaysSucceeds
+
 instance IsString AssetName where
   fromString = AssetName . BS.pack
 
@@ -380,7 +383,40 @@ modelUnitTests proxy =
                   ]
               ]
               mempty
+          ],
+
+
+
+      testProperty "mint-plutus" $
+        filterChainModelProp
+          proxy
+          ( testChainModelInteraction
+              proxy
+              ( Map.fromList
+                  [ ("alice", Coin 1_000_000_000)
+                  ]
+              )
+          )
+          [ ModelEpoch
+              [ ModelBlock
+                  1
+                  [ (modelTx 1)
+                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                        _mtxOutputs =
+                          [ ModelTxOut
+                              "alice"
+                              ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                  $+ modelMACoin (modelPlutusScript 0) [("purp", 1234)]
+                              )
+                          ],
+                        _mtxFee = modelCoin 1_000_000,
+                        _mtxMint = SupportsMint (modelMACoin (modelPlutusScript 0) [("purp", 1234)])
+                      }
+                  ]
+              ]
+              mempty
           ]
+
     ]
 
 modelUnitTests_ :: TestTree

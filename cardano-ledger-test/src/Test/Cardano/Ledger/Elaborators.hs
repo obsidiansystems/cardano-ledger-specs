@@ -22,12 +22,19 @@
 
 module Test.Cardano.Ledger.Elaborators where
 
-import qualified Cardano.Crypto.DSIGN.Class as DSIGN
-import qualified Cardano.Crypto.Hash.Class as Hash
 -- TODO use CPS'ed writer
 
+import qualified Cardano.Crypto.DSIGN.Class as DSIGN
+import qualified Cardano.Crypto.Hash.Class as Hash
+
+import qualified PlutusTx
+import GHC.Records (HasField (..))
+import Cardano.Ledger.Alonzo.Scripts (ExUnits(..))
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Crypto.VRF.Class (VerKeyVRF)
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
+import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
+import qualified Cardano.Ledger.Alonzo.Data as Alonzo
 import Cardano.Ledger.BaseTypes
 import Cardano.Ledger.Coin
 import qualified Cardano.Ledger.Core as Core
@@ -49,7 +56,7 @@ import qualified Control.Monad.Except as Except
 import Control.Monad.State (MonadState (..))
 import qualified Control.Monad.State.Class as State
 import Control.Monad.Trans.Class (lift)
-import qualified Control.Monad.Trans.State as State hiding (get, state)
+import qualified Control.Monad.Trans.State as State hiding (get, gets, state)
 import qualified Control.Monad.Writer as Writer
 import Data.Default.Class
 import Data.Foldable
@@ -126,7 +133,8 @@ data EraElaboratorState era = EraElaboratorState
     _eesUTxOs :: Map.Map ModelUTxOId ModelAddress,
     _eesPendingWitnessKeys :: [KeyPair 'Witness (Crypto era)],
     _eesCurrentSlot :: SlotNo,
-    _eesScripts :: ElaboratedScriptsCache era
+    _eesScripts :: ElaboratedScriptsCache era,
+    _eesRedeemers :: [ModelRedeemer era]
   }
 
 deriving instance
@@ -156,6 +164,9 @@ eesCurrentSlot a2fb s = (\b -> s {_eesCurrentSlot = b}) <$> a2fb (_eesCurrentSlo
 
 eesScripts :: Lens' (EraElaboratorState era) (Map.Map (ModelScript (EraScriptFeature era)) (ScriptHash (Crypto era), Core.Script era))
 eesScripts a2fb s = (\b -> s {_eesScripts = ElaboratedScriptsCache b}) <$> a2fb (unElaboratedScriptsCache $ _eesScripts s)
+
+eesRedeemers :: Lens' (EraElaboratorState era) [ModelRedeemer era]
+eesRedeemers a2fb s = (\b -> s {_eesRedeemers = b}) <$> a2fb (_eesRedeemers s)
 
 -- various derived values for an address to avoid recomputing them
 data TestKeyPair crypto = TestKeyPair
@@ -277,7 +288,8 @@ instance Default (EraElaboratorState era) where
         _eesCurrentSlot = 0,
         _eesPendingWitnessKeys = [],
         _eesUTxOs = Map.empty,
-        _eesScripts = ElaboratedScriptsCache Map.empty
+        _eesScripts = ElaboratedScriptsCache Map.empty,
+        _eesRedeemers = []
       }
 
 popScriptWitnesses ::
@@ -298,12 +310,15 @@ pushScriptWitness ::
   Core.Script era ->
   m ()
 pushScriptWitness _ modelPolicy policyHash realPolicy = do
-  State.state $
-    State.runState $
-      zoom _2 $
-        for_ (modelScriptNeededSigs modelPolicy) $ \mAddr -> do
-          (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
-          pushWitness myKeys
+  () <- case modelPolicy of
+    ModelScript_PlutusV1 _s1 -> (%=) (_2 . eesRedeemers) $ (:) $ ModelRedeemer
+      (Alonzo.Minting $ PolicyID policyHash)
+      (PlutusTx.I 0)
+      (ExUnits 10 10)
+
+    ModelScript_Timelock tl -> for_ (modelScriptNeededSigs tl) $ \mAddr -> State.state $ State.runState $ zoom _2 $ do
+      (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
+      pushWitness myKeys
   _2 . eesScripts . at modelPolicy .= Just (policyHash, realPolicy)
 
 noScriptAction ::
@@ -406,6 +421,11 @@ popWitnesses _ bodyHash = do
     flip foldMap witness $ \keyP ->
       Set.singleton $ UTxO.makeWitnessVKey bodyHash keyP
 
+popRedeemers ::
+  MonadState (EraElaboratorState era) m =>
+  m [ModelRedeemer era]
+popRedeemers = eesRedeemers <<.= []
+
 -- | lens to focus the ledger state from that used by ApplyBlock to that used by
 -- ApplyTx
 mempoolState :: Functor f => (MempoolState era -> f (MempoolState era)) -> (NewEpochState era -> f (NewEpochState era))
@@ -452,7 +472,8 @@ data TxBodyArguments era = TxBodyArguments
     -- | withdrawals
     _txBodyArguments_withdrawals :: !(Shelley.Wdrl (Crypto era)),
     -- | mint
-    _txBodyArguments_mint :: !(IfSupportsMint () (Core.Value era) (EraValueFeature era))
+    _txBodyArguments_mint :: !(IfSupportsMint () (Core.Value era) (EraValueFeature era)),
+    _txBodyArguments_redeemers :: !(IfSupportsPlutus' () (StrictMaybe (Alonzo.Redeemers era, Alonzo.TxDats era)) (EraScriptFeature era))
   }
 
 data TxWitnessArguments era = TxWitnessArguments
@@ -461,6 +482,12 @@ data TxWitnessArguments era = TxWitnessArguments
       !( IfSupportsScript
            ()
            (Map.Map (ScriptHash (Crypto era)) (Core.Script era))
+           (EraScriptFeature era)
+       ),
+    _txWitnessArguments_redeemers ::
+      !( IfSupportsPlutus'
+           ()
+           (Alonzo.Redeemers era, Alonzo.TxDats era)
            (EraScriptFeature era)
        )
   }
@@ -603,6 +630,7 @@ class
 
   -- | Construct a TxBody from some elaborated inputs.
   makeTxBody ::
+    NewEpochState era ->
     TxBodyArguments era ->
     Core.TxBody era
 
@@ -617,12 +645,18 @@ class
     ( Either (ElaborateBlockError era) (Era.TxInBlock era),
       (NewEpochState era, EraElaboratorState era)
     )
+  -- TODO: the Core.PParams ~ Alonzo.PParams constraint is somewhat crude, and a
+  -- typeclass to get the underlying language view would be a better solution.
   default elaborateTx ::
     ( DSIGN.Signable (C.DSIGN (Crypto era)) (Hash.Hash (C.HASH (Crypto era)) Shelley.EraIndependentTxBody),
       Hash.HashAlgorithm (C.HASH (Crypto era)),
       HashAnnotated (Core.TxBody era) Shelley.EraIndependentTxBody (Crypto era),
       C.Crypto (Crypto era),
-      UsesTxOut era
+      UsesTxOut era,
+      HasField "inputs" (Core.TxBody era) (Set.Set (Shelley.TxIn (Crypto era))),
+      HasField "wdrls" (Core.TxBody era) (Shelley.Wdrl (Crypto era)),
+      HasField "certs" (Core.TxBody era) (StrictSeq.StrictSeq (DCert (Crypto era)))
+      -- Core.PParams era ~ Cardano.Ledger.Alonzo.PParams.PParams era
     ) =>
     proxy era ->
     Globals ->
@@ -653,21 +687,6 @@ class
           ExpectedValueTypeC_MA -> case mtxMint of
             SupportsMint m' -> fmap SupportsMint $ Except.withExceptT ElaborateBlockError_TxValue $ Except.liftEither =<< evalModelValue (lookupModelValue pushScriptWitness) (unModelValue m')
 
-      let realTxBody =
-            makeTxBody @era
-              TxBodyArguments
-                { _txBodyArguments_ttl = maxTTL,
-                  _txBodyArguments_fee = fee,
-                  _txBodyArguments_inputs = ins,
-                  _txBodyArguments_outputs = StrictSeq.fromList outs,
-                  _txBodyArguments_delegCerts = StrictSeq.fromList dcerts,
-                  _txBodyArguments_withdrawals = Shelley.Wdrl wdrl,
-                  _txBodyArguments_mint = mint
-                }
-          bodyHash = hashAnnotated realTxBody
-
-      wits <- zoom _2 $ popWitnesses (Proxy :: Proxy era) bodyHash
-
       scripts1 <- popScriptWitnesses
 
       scripts ::
@@ -677,6 +696,39 @@ class
           tag@ScriptFeatureTag_Simple -> pure $ SupportsScript tag scripts1
           tag@ScriptFeatureTag_PlutusV1 -> pure $ SupportsScript tag scripts1
 
+      nes <- State.gets fst
+      let
+        txBodyArguments = TxBodyArguments
+          { _txBodyArguments_ttl = maxTTL,
+            _txBodyArguments_fee = fee,
+            _txBodyArguments_inputs = ins,
+            _txBodyArguments_outputs = StrictSeq.fromList outs,
+            _txBodyArguments_delegCerts = StrictSeq.fromList dcerts,
+            _txBodyArguments_withdrawals = Shelley.Wdrl wdrl,
+            _txBodyArguments_mint = mint,
+            _txBodyArguments_redeemers = ifSupportsPlutus (Proxy @(EraScriptFeature era)) () SNothing
+          }
+        fakeTxBody = makeTxBody @era nes $ txBodyArguments
+      redeemers <- case reifySupportsPlutus (Proxy @(EraScriptFeature era)) of
+        NoPlutusSupport () -> pure (NoPlutusSupport ())
+        SupportsPlutus () -> do
+          r <- zoom _2 $ popRedeemers
+          case traverse (elaborateModelRedeemer fakeTxBody) r of
+            SNothing -> error "cant elaborate ptr"
+            SJust xs -> do
+              let redeemers = Alonzo.Redeemers $ Map.fromList xs
+                  txDats = foldMapOf (traverse . _2 . _1) (\d -> Alonzo.TxDats $ Map.singleton (Alonzo.hashData d) d) xs
+              pure (SupportsPlutus (redeemers , txDats))
+
+      let realTxBody = case redeemers of
+            SupportsPlutus (r, _) | not (Alonzo.nullRedeemers r) -> makeTxBody @era nes $ txBodyArguments
+              { _txBodyArguments_redeemers = mapSupportsPlutus SJust redeemers }
+            _ -> fakeTxBody
+
+          bodyHash = hashAnnotated realTxBody
+
+      wits <- zoom _2 $ popWitnesses (Proxy :: Proxy era) bodyHash
+
       _2 . eesTxIds . at mtxId .= Just (UTxO.txid @era realTxBody)
       pure $
         makeTx
@@ -684,7 +736,8 @@ class
           realTxBody
           TxWitnessArguments
             { _txWitnessArguments_vkey = wits,
-              _txWitnessArguments_scripts = scripts
+              _txWitnessArguments_scripts = scripts,
+              _txWitnessArguments_redeemers = redeemers
             }
 
   -- | build a full tx from TxBody and set of witnesses.
@@ -879,6 +932,26 @@ observeRewards (nes, ems) =
           Just a' -> pure a'
           Nothing -> error $ "observeRewards: can't find " <> show a
         pure (a', b)
+
+-- under normal circumstances, this arises during elaboration, at which time the
+-- era is already known
+data ModelRedeemer era = ModelRedeemer
+  { _mrdmrPtr :: !(Alonzo.ScriptPurpose (Crypto era))
+  , _mrdmData :: !PlutusTx.Data
+  , _mrdmExUnits :: !ExUnits
+  } deriving (Eq, Show)
+
+elaborateModelRedeemer :: forall era .
+  ( HasField "inputs" (Core.TxBody era) (Set.Set (Shelley.TxIn (Crypto era))),
+    HasField "wdrls" (Core.TxBody era) (Shelley.Wdrl (Crypto era)),
+    HasField "certs" (Core.TxBody era) (StrictSeq.StrictSeq (DCert (Crypto era))),
+    HasField "minted" (Core.TxBody era) (Set.Set (ScriptHash (Crypto era)))
+  ) =>
+  Core.TxBody era ->
+  ModelRedeemer era ->
+  StrictMaybe (Alonzo.RdmrPtr, (Alonzo.Data era, Alonzo.ExUnits))
+elaborateModelRedeemer tx (ModelRedeemer scriptPurpose dat exUnits)
+  = (,) <$> (Alonzo.rdptr @era tx scriptPurpose) <*> pure (Alonzo.Data dat, exUnits)
 
 data ApplyBlockTransitionError era
   = ApplyBlockTransitionError_Tx (ApplyTxError era)

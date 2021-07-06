@@ -41,8 +41,8 @@ data ModelPlutusScript
   | ModelPlutusScript_AlwaysFails Natural
   deriving (Eq, Ord, Show)
 
-modelScriptNeededSigs :: ModelScript k -> [ModelAddress]
-modelScriptNeededSigs (ModelScript_Timelock x0) = go x0
+modelScriptNeededSigs :: ModelTimelock -> [ModelAddress]
+modelScriptNeededSigs = go
   where
     go = \case
       ModelTimelock_Signature ma -> [ma]
@@ -51,7 +51,8 @@ modelScriptNeededSigs (ModelScript_Timelock x0) = go x0
       ModelTimelock_MOfN n xs -> go =<< take n xs
       ModelTimelock_TimeStart _ -> []
       ModelTimelock_TimeExpire _ -> []
-modelScriptNeededSigs (ModelScript_PlutusV1 {}) = []
+
+-- modelScriptNeededSigs (ModelScript_PlutusV1 {}) = []
 
 data ScriptFeatureTag (s :: TyScriptFeature) where
   ScriptFeatureTag_None :: ScriptFeatureTag ('TyScriptFeature 'False 'False)
@@ -83,6 +84,35 @@ type family IfSupportsPlutus a (k :: TyScriptFeature) where
 type family Or (a :: Bool) (b :: Bool) :: Bool where
   Or 'False b = b
   Or 'True _ = 'True
+
+data IfSupportsPlutus' a b (k :: TyScriptFeature) where
+  NoPlutusSupport :: a -> IfSupportsPlutus' a b ('TyScriptFeature x 'False)
+  SupportsPlutus :: b -> IfSupportsPlutus' a b ('TyScriptFeature x 'True)
+
+ifSupportsPlutus ::
+  KnownScriptFeature s =>
+  proxy s ->
+  a ->
+  b ->
+  IfSupportsPlutus' a b s
+ifSupportsPlutus proxy x y = case reifySupportsPlutus proxy of
+  NoPlutusSupport () -> NoPlutusSupport x
+  SupportsPlutus () -> SupportsPlutus y
+
+mapSupportsPlutus ::
+  (a -> b) ->
+  IfSupportsPlutus' x a s ->
+  IfSupportsPlutus' x b s
+mapSupportsPlutus f = \case
+  NoPlutusSupport x -> NoPlutusSupport x
+  SupportsPlutus x -> SupportsPlutus (f x)
+
+reifySupportsPlutus
+  :: KnownScriptFeature s => proxy s -> IfSupportsPlutus' () () s
+reifySupportsPlutus proxy = case reifyScriptFeature proxy of
+  ScriptFeatureTag_None -> NoPlutusSupport ()
+  ScriptFeatureTag_Simple -> NoPlutusSupport ()
+  ScriptFeatureTag_PlutusV1 -> SupportsPlutus ()
 
 data IfSupportsScript a b (k :: TyScriptFeature) where
   NoScriptSupport ::
