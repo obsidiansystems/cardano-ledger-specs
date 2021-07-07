@@ -216,6 +216,7 @@ instance RequiredFeatures ModelTx where
           FeatureTag ValueFeatureTag_AdaOnly _ -> pure $ NoMintSupport ()
           FeatureTag ValueFeatureTag_AnyOutput _ -> pure (SupportsMint . ModelValue . ModelValue_Inject $ Coin 0)
         SupportsMint g' -> case tag of
+          FeatureTag ValueFeatureTag_AdaOnly _ | g' == ModelValue (ModelValue_Inject $ Val.zero) -> pure $ NoMintSupport ()
           FeatureTag ValueFeatureTag_AdaOnly _ -> Nothing
           FeatureTag ValueFeatureTag_AnyOutput _ -> SupportsMint <$> filterFeatures tag g'
 
