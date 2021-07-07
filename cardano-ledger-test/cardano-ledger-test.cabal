@@ -49,27 +49,7 @@ library
     Test.Cardano.Ledger.Elaborators
     Test.Cardano.Ledger.Elaborators.Alonzo
     Test.Cardano.Ledger.Elaborators.Shelley
-
-  build-depends:
-    shelley-spec-ledger,
-    groups,
-    containers,
-    transformers,
-    cardano-ledger-core,
-    cardano-ledger-shelley-ma,
-    cardano-slotting,
-    strict-containers,
-    tasty,
-    mtl,
-    tasty-quickcheck,
-    time,
-    cardano-crypto-class,
-    data-default-class,
-    cardano-binary,
-    lens,
-    shelley-spec-ledger-test,
-    cardano-ledger-alonzo,
-    small-steps
+    Test.Cardano.Ledger.DependGraph
 
   build-depends:
     bytestring,
@@ -84,9 +64,15 @@ library
     criterion,
     data-default-class,
     deepseq,
+    fgl,
+    lens,
+    monad-supply,
+    mtl,
+    nonempty-containers,
     plutus-ledger-api,
     plutus-tx,
     QuickCheck,
+    QuickCheck-GenT,
     shelley-spec-ledger,
     shelley-spec-ledger-test,
     small-steps,
@@ -94,7 +80,9 @@ library
     strict-containers,
     tasty,
     tasty-hunit,
+    tasty-quickcheck,
     time,
+    transformers,
 
 
 test-suite cardano-ledger-test
