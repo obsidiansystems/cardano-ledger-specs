@@ -207,7 +207,7 @@ instance RequiredFeatures ModelTx where
   filterFeatures :: forall a b. KnownRequiredFeatures a => FeatureTag b -> ModelTx a -> Maybe (ModelTx b)
   filterFeatures tag (ModelTx a b c d e f g) =
     ModelTx a b
-      <$> traverse (filterFeatures tag) c
+      <$> (traverse . traverse) (filterFeatures tag) c
       <*> (filterFeatures tag d)
       <*> pure e
       <*> traverse (filterFeatures tag) f
@@ -233,10 +233,7 @@ instance RequiredFeatures ModelEpoch where
 newtype ModelTxId = ModelTxId Integer
   deriving (Eq, Ord, Show, Num)
 
-data ModelTxIn
-  = ModelTxIn ModelTxId Natural
-  | ModelGensisIn ModelAddress
-  deriving (Eq, Ord, Show)
+type ModelTxIn = ModelUTxOId
 
 type ModelMA era = Map.Map (ModelScript era) (Map.Map AssetName Integer)
 
@@ -260,13 +257,13 @@ newtype ModelValue k era = ModelValue {unModelValue :: ModelValueF (ModelValueVa
 data ModelTxOut era = ModelTxOut ModelAddress (ModelValue (ValueFeature era) era)
   deriving (Eq, Ord, Show)
 
-data ModelUTxOId = ModelUTxOId ModelTxId Natural
-  deriving (Eq, Ord, Show)
+newtype ModelUTxOId = ModelUTxOId {unModelUTxOId :: Integer}
+  deriving (Eq, Ord, Show, Num, Enum)
 
 data ModelTx (era :: FeatureSet) = ModelTx
   { _mtxId :: !ModelTxId,
     _mtxInputs :: !(Set ModelTxIn),
-    _mtxOutputs :: ![ModelTxOut era],
+    _mtxOutputs :: ![(ModelUTxOId, ModelTxOut era)],
     _mtxFee :: !(ModelValue 'ExpectAdaOnly era),
     _mtxDCert :: ![ModelDCert],
     _mtxWdrl :: !(Map.Map ModelAddress (ModelValue 'ExpectAdaOnly era)),

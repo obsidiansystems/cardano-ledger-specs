@@ -13,12 +13,11 @@ import qualified Cardano.Crypto.KES.Class as KES
 import Cardano.Crypto.Util (SignableRepresentation)
 import Cardano.Ledger.Alonzo (AlonzoEra)
 import Cardano.Ledger.Alonzo.Genesis (AlonzoGenesis (..))
+import Cardano.Ledger.Alonzo.Language (Language (..))
 import Cardano.Ledger.Alonzo.Rules.Utxo
 import Cardano.Ledger.Alonzo.Rules.Utxow
 import Cardano.Ledger.Alonzo.Scripts (CostModel (..), ExUnits (..), Prices (..))
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
-import Cardano.Ledger.Alonzo.Language (Language(..))
-import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import Cardano.Ledger.Alonzo.Translation ()
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
@@ -33,6 +32,7 @@ import Data.Maybe.Strict (StrictMaybe (..))
 import qualified Data.Set as Set
 import Shelley.Spec.Ledger.API.Mempool (ApplyTxError (..))
 import Shelley.Spec.Ledger.API.Protocol (PraosCrypto)
+import qualified Shelley.Spec.Ledger.LedgerState as LedgerState
 import Shelley.Spec.Ledger.STS.Ledger
 import Shelley.Spec.Ledger.STS.Utxow
 import Test.Cardano.Ledger.Elaborators

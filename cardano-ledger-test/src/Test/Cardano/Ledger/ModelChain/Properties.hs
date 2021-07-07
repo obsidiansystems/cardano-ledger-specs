@@ -100,20 +100,18 @@ modelUnitTests ::
 modelUnitTests proxy =
   testGroup
     (show $ typeRep proxy)
-    [ testProperty "noop" $ testChainModelInteraction proxy Map.empty [],
+    [ testProperty "noop" $ testChainModelInteraction proxy [] [],
       testProperty "noop-2" $
         testChainModelInteraction
           proxy
-          ( Map.fromList
-              [ ("alice", Coin 1_000_000),
-                ("bob", Coin 1_000_000)
-              ]
+          ( [ (0, "alice", Coin 1_000_000),
+              (1, "bob", Coin 1_000_000)
+            ]
           )
           [ModelEpoch [] mempty],
       let genAct =
-            Map.fromList
-              [ ("alice", Coin 1_000_000_000_000)
-              ]
+            [ (0, "alice", Coin 1_000_000_000_000)
+            ]
           checks nes ems =
             let rewards = observeRewards (nes, ems)
              in counterexample (show rewards) $ Coin 0 === fold rewards
@@ -126,9 +124,9 @@ modelUnitTests proxy =
                   [ ModelBlock
                       0
                       [ (modelTx 1)
-                          { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                          { _mtxInputs = Set.fromList [0],
                             _mtxOutputs =
-                              [ ModelTxOut "alice" (modelCoin 1_000_000_000_000 $- (modelCoin 100_000_000_000))
+                              [ (1, ModelTxOut "alice" (modelCoin 1_000_000_000_000 $- (modelCoin 100_000_000_000)))
                               ],
                             _mtxFee = modelCoin 100_000_000_000,
                             _mtxDCert =
@@ -148,11 +146,11 @@ modelUnitTests proxy =
                   [ ModelBlock
                       0
                       [ (modelTx 1)
-                          { _mtxInputs = Set.fromList [ModelTxIn 1 0],
+                          { _mtxInputs = Set.fromList [1],
                             _mtxOutputs =
-                              [ ModelTxOut "alice" (modelCoin 1_000_000_000_000 $- (2 $* modelCoin 100_000_000_000)),
-                                ModelTxOut "bob" (modelReward "alice" $- modelCoin 100_000_000),
-                                ModelTxOut "carol" (modelCoin 100_000_000)
+                              [ (1, ModelTxOut "alice" (modelCoin 1_000_000_000_000 $- (2 $* modelCoin 100_000_000_000))),
+                                (2, ModelTxOut "bob" (modelReward "alice" $- modelCoin 100_000_000)),
+                                (3, ModelTxOut "carol" (modelCoin 100_000_000))
                               ],
                             _mtxFee = modelCoin 100_000_000_000,
                             _mtxWdrl = modelRewards ["alice"]
@@ -164,18 +162,17 @@ modelUnitTests proxy =
       testProperty "xfer" $
         testChainModelInteraction
           proxy
-          ( Map.fromList
-              [ ("alice", Coin 1_000_000_000)
-              ]
+          ( [ (0, "alice", Coin 1_000_000_000)
+            ]
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut "bob" (modelCoin 100_000_000),
-                            ModelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000))
+                          [ (1, ModelTxOut "bob" (modelCoin 100_000_000)),
+                            (2, ModelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -187,16 +184,15 @@ modelUnitTests proxy =
         testChainModelInteractionRejection
           proxy
           (ModelValueNotConservedUTxO (modelCoin 1_000_000_000) (modelCoin 101_000_000))
-          ( Map.fromList
-              [ ("alice", Coin 1_000_000_000)
-              ]
+          ( [ (0, "alice", Coin 1_000_000_000)
+            ]
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = (Set.fromList [ModelGensisIn "alice"]),
-                        _mtxOutputs = [ModelTxOut "bob" $ modelCoin 100_000_000],
+                      { _mtxInputs = (Set.fromList [0]),
+                        _mtxOutputs = [(1, ModelTxOut "bob" $ modelCoin 100_000_000)],
                         _mtxFee = modelCoin 1_000_000
                       }
                   ]
@@ -206,18 +202,17 @@ modelUnitTests proxy =
       testProperty "xfer-2" $
         testChainModelInteraction
           proxy
-          ( Map.fromList
-              [ ("alice", Coin 1_000_000_000)
-              ]
+          ( [ (0, "alice", Coin 1_000_000_000)
+            ]
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut "bob" (modelCoin 100_000_000),
-                            ModelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000))
+                          [ (1, ModelTxOut "bob" (modelCoin 100_000_000)),
+                            (2, ModelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -225,10 +220,10 @@ modelUnitTests proxy =
                 ModelBlock
                   2
                   [ (modelTx 2)
-                      { _mtxInputs = Set.fromList [ModelTxIn 1 1],
+                      { _mtxInputs = Set.fromList [2],
                         _mtxOutputs =
-                          [ ModelTxOut "bob" (modelCoin 100_000_000),
-                            ModelTxOut "alice" (modelCoin 1_000_000_000 $- 2 $* (modelCoin 100_000_000 $+ modelCoin 1_000_000))
+                          [ (3, ModelTxOut "bob" (modelCoin 100_000_000)),
+                            (4, ModelTxOut "alice" (modelCoin 1_000_000_000 $- 2 $* (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -241,22 +236,23 @@ modelUnitTests proxy =
           proxy
           ( testChainModelInteraction
               proxy
-              ( Map.fromList
-                  [ ("alice", Coin 1_000_000_000)
-                  ]
+              ( [ (0, "alice", Coin 1_000_000_000)
+                ]
               )
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
-                                  $+ modelMACoin purpleModelScript [("purp", 1234)]
-                              )
+                          [ ( 1,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                    $+ modelMACoin purpleModelScript [("purp", 1234)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000,
                         _mtxMint = SupportsMint (modelMACoin purpleModelScript [("purp", 1234)])
@@ -270,22 +266,23 @@ modelUnitTests proxy =
           proxy
           ( testChainModelInteraction
               proxy
-              ( Map.fromList
-                  [ ("alice", Coin 1_000_000_000)
-                  ]
+              ( [ (0, "alice", Coin 1_000_000_000)
+                ]
               )
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
-                                  $+ modelMACoin bobCoinScript [("BOB", 1234)]
-                              )
+                          [ ( 1,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                    $+ modelMACoin bobCoinScript [("BOB", 1234)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000,
                         _mtxMint = SupportsMint (modelMACoin bobCoinScript [("BOB", 1234)])
@@ -299,39 +296,44 @@ modelUnitTests proxy =
           proxy
           ( testChainModelInteraction
               proxy
-              ( Map.fromList
-                  [ ("alice", Coin 1_000_000_000)
-                  ]
+              ( [ (0, "alice", Coin 1_000_000_000)
+                ]
               )
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
-                                  $+ modelMACoin purpleModelScript [("BOB", 1234)]
-                              )
+                          [ ( 1,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                    $+ modelMACoin purpleModelScript [("BOB", 1234)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000,
                         _mtxMint = SupportsMint (modelMACoin purpleModelScript [("BOB", 1234)])
                       },
                     (modelTx 2)
-                      { _mtxInputs = Set.fromList [ModelTxIn 1 0],
+                      { _mtxInputs = Set.fromList [1],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (3 $* modelCoin 1_000_000)
-                                  $+ modelMACoin purpleModelScript [("BOB", 1134)]
-                              ),
-                            ModelTxOut
-                              "carol"
-                              ( modelCoin 1_000_000
-                                  $+ modelMACoin purpleModelScript [("BOB", 100)]
-                              )
+                          [ ( 2,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (3 $* modelCoin 1_000_000)
+                                    $+ modelMACoin purpleModelScript [("BOB", 1134)]
+                                )
+                            ),
+                            ( 3,
+                              ModelTxOut
+                                "carol"
+                                ( modelCoin 1_000_000
+                                    $+ modelMACoin purpleModelScript [("BOB", 100)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -344,39 +346,44 @@ modelUnitTests proxy =
           proxy
           ( testChainModelInteraction
               proxy
-              ( Map.fromList
-                  [ ("alice", Coin 1_000_000_000)
-                  ]
+              ( [ (0, "alice", Coin 1_000_000_000)
+                ]
               )
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
-                                  $+ modelMACoin bobCoinScript [("BOB", 1234)]
-                              )
+                          [ ( 1,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                    $+ modelMACoin bobCoinScript [("BOB", 1234)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000,
                         _mtxMint = SupportsMint (modelMACoin bobCoinScript [("BOB", 1234)])
                       },
                     (modelTx 2)
-                      { _mtxInputs = Set.fromList [ModelTxIn 1 0],
+                      { _mtxInputs = Set.fromList [1],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (3 $* modelCoin 1_000_000)
-                                  $+ modelMACoin bobCoinScript [("BOB", 1134)]
-                              ),
-                            ModelTxOut
-                              "carol"
-                              ( modelCoin 1_000_000
-                                  $+ modelMACoin bobCoinScript [("BOB", 100)]
-                              )
+                          [ ( 2,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (3 $* modelCoin 1_000_000)
+                                    $+ modelMACoin bobCoinScript [("BOB", 1134)]
+                                )
+                            ),
+                            ( 3,
+                              ModelTxOut
+                                "carol"
+                                ( modelCoin 1_000_000
+                                    $+ modelMACoin bobCoinScript [("BOB", 100)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -384,30 +391,28 @@ modelUnitTests proxy =
               ]
               mempty
           ],
-
-
-
       testProperty "mint-plutus" $
         filterChainModelProp
           proxy
           ( testChainModelInteraction
               proxy
-              ( Map.fromList
-                  [ ("alice", Coin 1_000_000_000)
-                  ]
+              ( [ (0, "alice", Coin 1_000_000_000)
+                ]
               )
           )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
-                      { _mtxInputs = Set.fromList [ModelGensisIn "alice"],
+                      { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ModelTxOut
-                              "alice"
-                              ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
-                                  $+ modelMACoin (modelPlutusScript 0) [("purp", 1234)]
-                              )
+                          [ ( 1,
+                              ModelTxOut
+                                "alice"
+                                ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                    $+ modelMACoin (modelPlutusScript 0) [("purp", 1234)]
+                                )
+                            )
                           ],
                         _mtxFee = modelCoin 1_000_000,
                         _mtxMint = SupportsMint (modelMACoin (modelPlutusScript 0) [("purp", 1234)])
@@ -416,7 +421,6 @@ modelUnitTests proxy =
               ]
               mempty
           ]
-
     ]
 
 modelUnitTests_ :: TestTree

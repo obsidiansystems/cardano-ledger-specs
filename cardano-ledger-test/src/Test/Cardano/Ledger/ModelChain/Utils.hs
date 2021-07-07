@@ -47,7 +47,7 @@ chainModelInteractionWith ::
     ElaborateEraModel era
   ) =>
   proxy era ->
-  Map.Map ModelAddress Coin ->
+  [(ModelUTxOId, ModelAddress, Coin)] ->
   [ModelEpoch (EraFeatureSet era)] ->
   (Either (ElaborateBlockError era) (), (NewEpochState era, EraElaboratorState era))
 chainModelInteractionWith _ genesisAccounts modelBlocks =
@@ -92,7 +92,7 @@ testChainModelInteractionWith ::
   ) =>
   proxy era ->
   (NewEpochState era -> EraElaboratorState era -> prop) ->
-  Map.Map ModelAddress Coin ->
+  [(ModelUTxOId, ModelAddress, Coin)] ->
   [ModelEpoch (EraFeatureSet era)] ->
   Property
 testChainModelInteractionWith proxy p a b =
@@ -118,7 +118,7 @@ testChainModelInteractionRejection ::
   ) =>
   proxy era ->
   ModelPredicateFailure (EraFeatureSet era) ->
-  Map.Map ModelAddress Coin ->
+  [(ModelUTxOId, ModelAddress, Coin)] ->
   [ModelEpoch (EraFeatureSet era)] ->
   Property
 testChainModelInteractionRejection proxy e a b =
@@ -147,7 +147,7 @@ testChainModelInteraction ::
     Show (Core.Value era)
   ) =>
   proxy era ->
-  Map.Map ModelAddress Coin ->
+  [(ModelUTxOId, ModelAddress, Coin)] ->
   [ModelEpoch (EraFeatureSet era)] ->
   Property
 testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (\x y -> x `seq` y `seq` True)

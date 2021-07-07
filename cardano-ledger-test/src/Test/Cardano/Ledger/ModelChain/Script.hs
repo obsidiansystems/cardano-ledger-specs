@@ -73,6 +73,7 @@ hasKnownScriptFeature = \case
   ScriptFeatureTag_Simple -> \x -> x
   ScriptFeatureTag_PlutusV1 -> \x -> x
 
+-- TODO: get rid of these type families, use GADTs everywhere
 type family IfSupportsTimelock a (k :: TyScriptFeature) where
   IfSupportsTimelock a ('TyScriptFeature 'True _) = a
   IfSupportsTimelock _ ('TyScriptFeature 'False _) = Void
@@ -107,8 +108,8 @@ mapSupportsPlutus f = \case
   NoPlutusSupport x -> NoPlutusSupport x
   SupportsPlutus x -> SupportsPlutus (f x)
 
-reifySupportsPlutus
-  :: KnownScriptFeature s => proxy s -> IfSupportsPlutus' () () s
+reifySupportsPlutus ::
+  KnownScriptFeature s => proxy s -> IfSupportsPlutus' () () s
 reifySupportsPlutus proxy = case reifyScriptFeature proxy of
   ScriptFeatureTag_None -> NoPlutusSupport ()
   ScriptFeatureTag_Simple -> NoPlutusSupport ()

@@ -26,15 +26,12 @@ module Test.Cardano.Ledger.Elaborators where
 
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import qualified Cardano.Crypto.Hash.Class as Hash
-
-import qualified PlutusTx
-import GHC.Records (HasField (..))
-import Cardano.Ledger.Alonzo.Scripts (ExUnits(..))
-import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Crypto.VRF.Class (VerKeyVRF)
-import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
-import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import qualified Cardano.Ledger.Alonzo.Data as Alonzo
+import Cardano.Ledger.Alonzo.Scripts (ExUnits (..))
+import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
+import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
+import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import Cardano.Ledger.BaseTypes
 import Cardano.Ledger.Coin
 import qualified Cardano.Ledger.Core as Core
@@ -68,7 +65,9 @@ import qualified Data.Set as Set
 import Data.Traversable
 import Data.Void
 import Data.Word (Word64)
+import GHC.Records (HasField (..))
 import Numeric.Natural
+import qualified PlutusTx
 import Shelley.Spec.Ledger.API.Genesis
 import Shelley.Spec.Ledger.API.Mempool
 import Shelley.Spec.Ledger.API.Validation
@@ -125,12 +124,18 @@ instance Show (ElaboratedScriptsCache era) where
       Show.showString "ElaboratedScriptsCache "
         . showsPrec 11 (Map.keysSet xs)
 
+-- when creating outputs at "genesis", we know the txid's apriori; and recorde
+-- them immediately.  otherwise we don't know the txid's until we're done
+-- composing the txBody, and need a layer of indirection.
+type ModelTxId' c = Either (Shelley.TxIn c) (ModelTxId, Natural)
+
 data EraElaboratorState era = EraElaboratorState
   { _eesUnusedKeyPairs :: Word64,
     _eesKeys :: Map.Map ModelAddress (TestKeyPair (Crypto era)),
     _eesTxIds :: Map.Map ModelTxId (Shelley.TxId (Crypto era)),
     _eesCurrentEpoch :: EpochNo,
-    _eesUTxOs :: Map.Map ModelUTxOId ModelAddress,
+    -- _eesUTxOs :: Map.Map ModelUTxOId (ModelTxId' (Crypto era), ModelTxOut (EraFeatureSet era)),
+    _eesUTxOs :: Map.Map ModelUTxOId (ModelTxId' (Crypto era), ModelAddress),
     _eesPendingWitnessKeys :: [KeyPair 'Witness (Crypto era)],
     _eesCurrentSlot :: SlotNo,
     _eesScripts :: ElaboratedScriptsCache era,
@@ -156,7 +161,8 @@ eesCurrentEpoch a2fb s = (\b -> s {_eesCurrentEpoch = b}) <$> a2fb (_eesCurrentE
 eesPendingWitnessKeys :: Functor f => ([KeyPair 'Witness (Crypto era)] -> f [KeyPair 'Witness (Crypto era)]) -> EraElaboratorState era -> f (EraElaboratorState era)
 eesPendingWitnessKeys a2fb s = (\b -> s {_eesPendingWitnessKeys = b}) <$> a2fb (_eesPendingWitnessKeys s)
 
-eesUTxOs :: Lens' (EraElaboratorState era) (Map.Map ModelUTxOId ModelAddress)
+-- eesUTxOs :: Lens' (EraElaboratorState era) (Map.Map ModelUTxOId (ModelTxId' (Crypto era), ModelTxOut (EraFeatureSet era)))
+eesUTxOs :: Lens' (EraElaboratorState era) (Map.Map ModelUTxOId (ModelTxId' (Crypto era), ModelAddress))
 eesUTxOs a2fb s = (\b -> s {_eesUTxOs = b}) <$> a2fb (_eesUTxOs s)
 
 eesCurrentSlot :: Lens' (EraElaboratorState era) SlotNo
@@ -311,14 +317,18 @@ pushScriptWitness ::
   m ()
 pushScriptWitness _ modelPolicy policyHash realPolicy = do
   () <- case modelPolicy of
-    ModelScript_PlutusV1 _s1 -> (%=) (_2 . eesRedeemers) $ (:) $ ModelRedeemer
-      (Alonzo.Minting $ PolicyID policyHash)
-      (PlutusTx.I 0)
-      (ExUnits 10 10)
-
-    ModelScript_Timelock tl -> for_ (modelScriptNeededSigs tl) $ \mAddr -> State.state $ State.runState $ zoom _2 $ do
-      (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
-      pushWitness myKeys
+    ModelScript_PlutusV1 _s1 ->
+      (%=) (_2 . eesRedeemers) $
+        (:) $
+          ModelRedeemer
+            (Alonzo.Minting $ PolicyID policyHash)
+            (PlutusTx.I 0)
+            (ExUnits 10 10)
+    ModelScript_Timelock tl -> for_ (modelScriptNeededSigs tl) $ \mAddr -> State.state $
+      State.runState $
+        zoom _2 $ do
+          (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
+          pushWitness myKeys
   _2 . eesScripts . at modelPolicy .= Just (policyHash, realPolicy)
 
 noScriptAction ::
@@ -362,14 +372,16 @@ mkTxOut ::
     UsesTxOut era,
     ElaborateEraModel era
   ) =>
+  ModelTxId ->
+  Natural ->
   ModelUTxOId ->
   ModelTxOut (EraFeatureSet era) ->
   m (Core.TxOut era)
-mkTxOut mutxoId (ModelTxOut mAddr (ModelValue mValue)) = (=<<) Except.liftEither $
+mkTxOut mtxId idx mutxoId (ModelTxOut mAddr (ModelValue mValue)) = (=<<) Except.liftEither $
   State.state $
     State.runState $
       Except.runExceptT $ do
-        _2 . eesUTxOs . at mutxoId .= Just mAddr
+        _2 . eesUTxOs . at mutxoId .= Just (Right (mtxId, idx), mAddr)
         addr <- zoom _2 $ getAddrFor (Proxy :: Proxy era) mAddr
         val :: Core.Value era <- either (Except.throwError . ElaborateBlockError_TxValue @era) pure =<< evalModelValue (lookupModelValue noScriptAction) mValue
         pure (makeTxOut (Proxy :: Proxy era) addr val)
@@ -381,20 +393,20 @@ mkTxIn ::
   ) =>
   ModelTxIn ->
   m (Set.Set (Shelley.TxIn (Crypto era)))
-mkTxIn = \case
-  -- TODO: handle missing txnIds more gracefully?
-  ModelTxIn mtxId idx -> do
-    ses <- use id
-    ownerMAddr <- use $ eesUTxOs . at (ModelUTxOId mtxId idx)
-    for_ ownerMAddr $ \mAddr -> do
+mkTxIn moid = do
+  ses <- use id
+  mutxo <- use $ eesUTxOs . at moid
+  case mutxo of
+    -- TODO: handle missing txnIds more gracefully?
+    Nothing -> pure mempty
+    Just (mutxo', mAddr) -> do
       (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
       pushWitness myKeys
-    pure . maybe Set.empty Set.singleton $ Shelley.TxIn <$> Map.lookup mtxId (_eesTxIds ses) <*> pure idx
-  ModelGensisIn mAddr -> do
-    myAddr <- getAddrFor (Proxy :: Proxy era) mAddr
-    (myKeys, _) <- getKeyPairFor (Proxy :: Proxy era) mAddr
-    pushWitness myKeys
-    pure $ Set.singleton $ initialFundsPseudoTxIn $ myAddr
+
+      case mutxo' of
+        Left txin -> pure (Set.singleton txin)
+        Right (mtxId, idx) ->
+          pure . maybe Set.empty Set.singleton $ Shelley.TxIn <$> Map.lookup mtxId (_eesTxIds ses) <*> pure idx
 
 -- | accumulate a witness while elaborating a ModelTx.
 pushWitness ::
@@ -505,9 +517,6 @@ class
   type EraFeatureSet era :: FeatureSet
   eraFeatureSet :: proxy era -> FeatureTag (EraFeatureSet era)
 
-  -- type ValueFeature era :: TyValueExpected
-  -- type ScriptFeature era :: TyScriptFeature
-
   reifyValueConstraint ::
     ExpectedValueTypeC era
 
@@ -550,11 +559,9 @@ class
         for_ txSeq $ \tx -> do
           (nes0, ems) <- get
           (mps', _) <- liftApplyTxError $ applyTx globals mempoolEnv (view mempoolState nes0) $ extractTx tx
-          -- mps' <- liftApplyTxError $ applyTxInBlock globals mempoolEnv (view mempoolState nes0) tx
           let nes1 = set mempoolState mps' nes0
           put (nes1, ems)
 
-        -- pure (slot, txSeq)
         pure ()
 
   -- | get a NewEpochState from genesis conditions.
@@ -562,7 +569,7 @@ class
     ShelleyGenesis era ->
     AdditionalGenesisConfig era ->
     -- | Initial coins present at time of genesis.  Each address will have its full balance in a single UTxO from a single "transaction"
-    Map.Map ModelAddress Coin ->
+    [(ModelUTxOId, ModelAddress, Coin)] ->
     EraElaboratorState era ->
     ( NewEpochState era,
       EraElaboratorState era
@@ -573,15 +580,16 @@ class
     ) =>
     ShelleyGenesis era ->
     AdditionalGenesisConfig era ->
-    Map.Map ModelAddress Coin ->
+    [(ModelUTxOId, ModelAddress, Coin)] ->
     EraElaboratorState era ->
     ( NewEpochState era,
       EraElaboratorState era
     )
   elaborateInitialState sg additionalGenesesConfig genesisAccounts = State.runState $ do
     utxo0 <- fmap Map.fromList $
-      for (Map.toList genesisAccounts) $ \(mAddr, coins) -> do
+      for genesisAccounts $ \(oid, mAddr, coins) -> do
         addr <- getAddrFor (Proxy :: Proxy era) mAddr
+        eesUTxOs . at oid .= Just (Left (initialFundsPseudoTxIn addr), mAddr)
         pure (addr, coins)
 
     pure $ initialState sg {sgInitialFunds = Map.unionWith const utxo0 $ sgInitialFunds sg} additionalGenesesConfig
@@ -668,7 +676,7 @@ class
     )
   elaborateTx proxy _ maxTTL (ModelTx mtxId mtxInputs mtxOutputs (ModelValue mtxFee) mtxDCert mtxWdrl mtxMint) = State.runState $
     Except.runExceptT $ do
-      outs <- ifor mtxOutputs $ \idx -> mkTxOut $ ModelUTxOId mtxId $ toEnum @Natural idx
+      outs <- ifor mtxOutputs $ \idx (oid, o) -> mkTxOut mtxId (toEnum @Natural idx) oid o
       ins :: Set.Set (Shelley.TxIn (Crypto era)) <- zoom _2 $ fmap fold $ traverse mkTxIn $ Set.toList mtxInputs
       dcerts <- traverse (zoom _2 . mkDCerts (Proxy :: Proxy era)) mtxDCert
       wdrl <- fmap Map.fromList $
@@ -697,18 +705,18 @@ class
           tag@ScriptFeatureTag_PlutusV1 -> pure $ SupportsScript tag scripts1
 
       nes <- State.gets fst
-      let
-        txBodyArguments = TxBodyArguments
-          { _txBodyArguments_ttl = maxTTL,
-            _txBodyArguments_fee = fee,
-            _txBodyArguments_inputs = ins,
-            _txBodyArguments_outputs = StrictSeq.fromList outs,
-            _txBodyArguments_delegCerts = StrictSeq.fromList dcerts,
-            _txBodyArguments_withdrawals = Shelley.Wdrl wdrl,
-            _txBodyArguments_mint = mint,
-            _txBodyArguments_redeemers = ifSupportsPlutus (Proxy @(EraScriptFeature era)) () SNothing
-          }
-        fakeTxBody = makeTxBody @era nes $ txBodyArguments
+      let txBodyArguments =
+            TxBodyArguments
+              { _txBodyArguments_ttl = maxTTL,
+                _txBodyArguments_fee = fee,
+                _txBodyArguments_inputs = ins,
+                _txBodyArguments_outputs = StrictSeq.fromList outs,
+                _txBodyArguments_delegCerts = StrictSeq.fromList dcerts,
+                _txBodyArguments_withdrawals = Shelley.Wdrl wdrl,
+                _txBodyArguments_mint = mint,
+                _txBodyArguments_redeemers = ifSupportsPlutus (Proxy @(EraScriptFeature era)) () SNothing
+              }
+          fakeTxBody = makeTxBody @era nes $ txBodyArguments
       redeemers <- case reifySupportsPlutus (Proxy @(EraScriptFeature era)) of
         NoPlutusSupport () -> pure (NoPlutusSupport ())
         SupportsPlutus () -> do
@@ -718,11 +726,15 @@ class
             SJust xs -> do
               let redeemers = Alonzo.Redeemers $ Map.fromList xs
                   txDats = foldMapOf (traverse . _2 . _1) (\d -> Alonzo.TxDats $ Map.singleton (Alonzo.hashData d) d) xs
-              pure (SupportsPlutus (redeemers , txDats))
+              pure (SupportsPlutus (redeemers, txDats))
 
       let realTxBody = case redeemers of
-            SupportsPlutus (r, _) | not (Alonzo.nullRedeemers r) -> makeTxBody @era nes $ txBodyArguments
-              { _txBodyArguments_redeemers = mapSupportsPlutus SJust redeemers }
+            SupportsPlutus (r, _)
+              | not (Alonzo.nullRedeemers r) ->
+                makeTxBody @era nes $
+                  txBodyArguments
+                    { _txBodyArguments_redeemers = mapSupportsPlutus SJust redeemers
+                    }
             _ -> fakeTxBody
 
           bodyHash = hashAnnotated realTxBody
@@ -867,11 +879,6 @@ instance AsApplyTxError era (ElaborateBlockError era) where
     ElaborateBlockError_ApplyTx x -> Right x
     x -> Left x
 
--- instance AsApplyTxError era (ApplyBlockTransitionError era) where
---   asApplyTxError = prism ApplyBlockTransitionError_Tx $ \case
---     ApplyBlockTransitionError_Tx x -> Right x
---     x -> Left x
-
 liftApplyTxError ::
   (Except.MonadError e m, AsApplyTxError era e) =>
   Except.Except (ApplyTxError era) a ->
@@ -936,12 +943,14 @@ observeRewards (nes, ems) =
 -- under normal circumstances, this arises during elaboration, at which time the
 -- era is already known
 data ModelRedeemer era = ModelRedeemer
-  { _mrdmrPtr :: !(Alonzo.ScriptPurpose (Crypto era))
-  , _mrdmData :: !PlutusTx.Data
-  , _mrdmExUnits :: !ExUnits
-  } deriving (Eq, Show)
+  { _mrdmrPtr :: !(Alonzo.ScriptPurpose (Crypto era)),
+    _mrdmData :: !PlutusTx.Data,
+    _mrdmExUnits :: !ExUnits
+  }
+  deriving (Eq, Show)
 
-elaborateModelRedeemer :: forall era .
+elaborateModelRedeemer ::
+  forall era.
   ( HasField "inputs" (Core.TxBody era) (Set.Set (Shelley.TxIn (Crypto era))),
     HasField "wdrls" (Core.TxBody era) (Shelley.Wdrl (Crypto era)),
     HasField "certs" (Core.TxBody era) (StrictSeq.StrictSeq (DCert (Crypto era))),
@@ -950,8 +959,8 @@ elaborateModelRedeemer :: forall era .
   Core.TxBody era ->
   ModelRedeemer era ->
   StrictMaybe (Alonzo.RdmrPtr, (Alonzo.Data era, Alonzo.ExUnits))
-elaborateModelRedeemer tx (ModelRedeemer scriptPurpose dat exUnits)
-  = (,) <$> (Alonzo.rdptr @era tx scriptPurpose) <*> pure (Alonzo.Data dat, exUnits)
+elaborateModelRedeemer tx (ModelRedeemer scriptPurpose dat exUnits) =
+  (,) <$> (Alonzo.rdptr @era tx scriptPurpose) <*> pure (Alonzo.Data dat, exUnits)
 
 data ApplyBlockTransitionError era
   = ApplyBlockTransitionError_Tx (ApplyTxError era)
