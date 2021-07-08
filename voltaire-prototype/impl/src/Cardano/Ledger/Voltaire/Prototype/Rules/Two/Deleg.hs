@@ -19,10 +19,13 @@ module Cardano.Ledger.Voltaire.Prototype.Rules.Two.Deleg
   )
 where
 
+import Cardano.Prelude (Word8)
 import Cardano.Binary
   ( FromCBOR (..),
     ToCBOR (..),
+    encodeListLen,
   )
+import Shelley.Spec.Ledger.Serialization (decodeRecordSum)
 import Cardano.Ledger.Coin (Coin (..))
 import qualified Cardano.Ledger.Core as Core
 import Cardano.Ledger.Era (Crypto, Era)
@@ -38,6 +41,7 @@ import NoThunks.Class (NoThunks (..))
 import Shelley.Spec.Ledger.BaseTypes
   ( Globals (..),
     ShelleyBase,
+    invalidKey,
   )
 import Shelley.Spec.Ledger.Credential (Credential)
 import Shelley.Spec.Ledger.Keys
@@ -70,7 +74,6 @@ import Shelley.Spec.Ledger.TxBody
     GenesisDelegCert (..),
     Ptr
   )
-import qualified Shelley.Spec.Ledger.STS.Deleg as Shelley
 
 data DELEG era
 
@@ -129,51 +132,64 @@ instance
   (Typeable era, Era era, Typeable (Core.Script era)) =>
   ToCBOR (DelegPredicateFailure era)
   where
-  toCBOR = toCBOR . toShelley
-    where
-    toShelley :: DelegPredicateFailure era -> Shelley.DelegPredicateFailure era
-    toShelley = \case
-      StakeKeyAlreadyRegisteredDELEG cred ->
-        Shelley.StakeKeyAlreadyRegisteredDELEG cred
-      StakeKeyNotRegisteredDELEG cred ->
-        Shelley.StakeKeyNotRegisteredDELEG cred
-      StakeKeyNonZeroAccountBalanceDELEG rewardBalance ->
-        Shelley.StakeKeyNonZeroAccountBalanceDELEG rewardBalance
-      StakeDelegationImpossibleDELEG cred ->
-        Shelley.StakeDelegationImpossibleDELEG cred
-      WrongCertificateTypeDELEG ->
-        Shelley.WrongCertificateTypeDELEG
-      GenesisKeyNotInMappingDELEG gkh ->
-        Shelley.GenesisKeyNotInMappingDELEG gkh
-      DuplicateGenesisDelegateDELEG kh ->
-        Shelley.DuplicateGenesisDelegateDELEG kh
-      DuplicateGenesisVRFDELEG vrf ->
-        Shelley.DuplicateGenesisVRFDELEG vrf
-      StakeKeyInRewardsDELEG cred ->
-        Shelley.StakeKeyInRewardsDELEG cred
-      MirCertNotSupported _ ->
-        error "TODO"
+  toCBOR = \case
+    StakeKeyAlreadyRegisteredDELEG cred ->
+      encodeListLen 2 <> toCBOR (0 :: Word8) <> toCBOR cred
+    StakeKeyNotRegisteredDELEG cred ->
+      encodeListLen 2 <> toCBOR (1 :: Word8) <> toCBOR cred
+    StakeKeyNonZeroAccountBalanceDELEG rewardBalance ->
+      encodeListLen 2 <> toCBOR (2 :: Word8) <> toCBOR rewardBalance
+    StakeDelegationImpossibleDELEG cred ->
+      encodeListLen 2 <> toCBOR (3 :: Word8) <> toCBOR cred
+    WrongCertificateTypeDELEG ->
+      encodeListLen 1 <> toCBOR (4 :: Word8)
+    GenesisKeyNotInMappingDELEG gkh ->
+      encodeListLen 2 <> toCBOR (5 :: Word8) <> toCBOR gkh
+    DuplicateGenesisDelegateDELEG kh ->
+      encodeListLen 2 <> toCBOR (6 :: Word8) <> toCBOR kh
+    DuplicateGenesisVRFDELEG vrf ->
+      encodeListLen 2 <> toCBOR (7 :: Word8) <> toCBOR vrf
+    StakeKeyInRewardsDELEG cred ->
+      encodeListLen 2 <> toCBOR (8 :: Word8) <> toCBOR cred
+    MirCertNotSupported mirCert ->
+        encodeListLen 2 <> toCBOR (9 :: Word8) <> toCBOR mirCert
 
 instance
   (Era era, Typeable (Core.Script era)) =>
   FromCBOR (DelegPredicateFailure era)
   where
-  fromCBOR =
-    fromCBOR >>= fromShelley
-    where
-    fromShelley :: MonadFail m => Shelley.DelegPredicateFailure era -> m (DelegPredicateFailure era)
-    fromShelley lel = case lel of
-      Shelley.StakeKeyAlreadyRegisteredDELEG cred -> pure $ StakeKeyAlreadyRegisteredDELEG cred
-      Shelley.StakeKeyNotRegisteredDELEG cred -> pure $ StakeKeyNotRegisteredDELEG cred
-      Shelley.StakeKeyNonZeroAccountBalanceDELEG rewardBalance -> pure $ StakeKeyNonZeroAccountBalanceDELEG rewardBalance
-      Shelley.StakeDelegationImpossibleDELEG cred -> pure $ StakeDelegationImpossibleDELEG cred
-      Shelley.WrongCertificateTypeDELEG -> pure WrongCertificateTypeDELEG
-      Shelley.GenesisKeyNotInMappingDELEG gkh -> pure $ GenesisKeyNotInMappingDELEG gkh
-      Shelley.DuplicateGenesisDelegateDELEG kh -> pure $ DuplicateGenesisDelegateDELEG kh
-      Shelley.DuplicateGenesisVRFDELEG vrf -> pure $ DuplicateGenesisVRFDELEG vrf
-      Shelley.StakeKeyInRewardsDELEG cred -> pure $ StakeKeyInRewardsDELEG cred
-      shelleyDelegPredicateFailure ->
-        fail $ "Voltaire does not support the Shelley failure: " <> show shelleyDelegPredicateFailure
+  fromCBOR = decodeRecordSum "PredicateFailure (DELEG era)" $
+    \case
+      0 -> do
+        kh <- fromCBOR
+        pure (2, StakeKeyAlreadyRegisteredDELEG kh)
+      1 -> do
+        kh <- fromCBOR
+        pure (2, StakeKeyNotRegisteredDELEG kh)
+      2 -> do
+        b <- fromCBOR
+        pure (2, StakeKeyNonZeroAccountBalanceDELEG b)
+      3 -> do
+        kh <- fromCBOR
+        pure (2, StakeDelegationImpossibleDELEG kh)
+      4 -> do
+        pure (1, WrongCertificateTypeDELEG)
+      5 -> do
+        gkh <- fromCBOR
+        pure (2, GenesisKeyNotInMappingDELEG gkh)
+      6 -> do
+        kh <- fromCBOR
+        pure (2, DuplicateGenesisDelegateDELEG kh)
+      7 -> do
+        vrf <- fromCBOR
+        pure (2, DuplicateGenesisVRFDELEG vrf)
+      8 -> do
+        kh <- fromCBOR
+        pure (2, StakeKeyInRewardsDELEG kh)
+      9 -> do
+        mirCert <- fromCBOR
+        pure (2, MirCertNotSupported mirCert)
+      k -> invalidKey k
 
 -- | Same as Shelley's but without the MIR-related stuff
 delegationTransition ::

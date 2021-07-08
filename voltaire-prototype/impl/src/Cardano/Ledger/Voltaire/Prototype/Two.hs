@@ -11,6 +11,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DerivingVia #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-} -- Shelley.MIRCert instances
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Cardano.Ledger.Voltaire.Prototype.Two
 ( module Cardano.Ledger.Voltaire.Prototype.Two
 , Shelley.MIRCert
@@ -19,6 +21,7 @@ where
 
 import Cardano.Ledger.Era
 import qualified Cardano.Ledger.Core as Core
+import qualified Cardano.Ledger.Crypto as CC (Crypto)
 import Cardano.Ledger.Voltaire.Prototype.Class (Proposal(..), Votes(..), Submissions(..), Update(..))
 import qualified Cardano.Ledger.Voltaire.Prototype.One as One
 import qualified Cardano.Ledger.Voltaire.Prototype.Class as Voltaire
@@ -74,22 +77,44 @@ deriving instance NFData (Shelley.PParamsDelta era) => NFData (ProposalBody era)
 
 instance NoThunks (Shelley.PParamsDelta era) => NoThunks (ProposalBody era)
 
-instance PrettyA (ProposalBody era) where
-  prettyA = error "TODO"
+instance PrettyA (Shelley.PParamsDelta era) => PrettyA (ProposalBody era) where
+  prettyA = ppProposalBody
+    where
+      ppProposalBody (BodyPPUP pParamsDelta) =
+        ppSexp "BodyPPUP" [prettyA pParamsDelta]
+      ppProposalBody (BodyMIR mirCert) =
+        ppSexp "BodyMIR" [prettyA mirCert]
 
-instance (Era era, ToCBOR (Shelley.PParamsDelta era)) => ToCBOR (ProposalBody era) where
-  toCBOR _ =
-    error "TODO"
 
 instance
-  (Era era, FromCBOR (Shelley.PParamsDelta era)) =>
+  ( Typeable (Crypto era)
+  , Typeable era
+  , ToCBOR (Shelley.PParamsDelta era)
+  , CC.Crypto (Crypto era)
+  ) => ToCBOR (ProposalBody era) where
+  toCBOR x = encode (encodePB x)
+    where
+    encodePB :: ToCBOR (Shelley.PParamsDelta era)
+             => CC.Crypto (Crypto era)
+             => ProposalBody era
+             -> Encode 'Open (ProposalBody era)
+    encodePB (BodyPPUP i) = Sum BodyPPUP 0 !> To i
+    encodePB (BodyMIR s) = Sum BodyMIR 1 !> To s
+
+instance
+  ( CC.Crypto (Crypto era)
+  , Typeable (Crypto era)
+  , Typeable era
+  , FromCBOR (Shelley.PParamsDelta era)
+  ) =>
   FromCBOR (ProposalBody era)
   where
-  fromCBOR = decode (Summands "ProposalBody" decode')
+  fromCBOR = decode (Summands "VoltaireTwo ProposalBody" decodePB)
     where
-      decode' 0 = SumD BodyPPUP <! From
-      decode' 1 = SumD BodyMIR <! From
-      decode' k = Invalid k
+    decodePB 0 = SumD BodyPPUP <! From
+    decodePB 1 = SumD BodyMIR <! From
+    decodePB n = Invalid n
+
 
 bodyPParamsDelta :: ProposalBody era -> Maybe (Shelley.PParamsDelta era)
 bodyPParamsDelta (BodyPPUP pParams) = Just pParams
@@ -124,40 +149,39 @@ instance Default (PPUPState era) where
     emptyPUpdates = ProposedUpdates Map.empty
 
 instance (Era era, ToCBOR (Shelley.PParamsDelta era)) => ToCBOR (PPUPState era) where
-  toCBOR _ =
-    error "TODO"
+  toCBOR (PPUPState m s) =
+    encode $ Rec PPUPState !> To m !> To s
 
 instance
-  (Era era, FromCBOR (Shelley.PParamsDelta era)) =>
+  (Era era, FromCBOR (Shelley.PParamsDelta era), FromCBOR (ProposalBody era)) =>
   FromCBOR (PPUPState era)
   where
   fromCBOR =
-    error "TODO"
+    decode $ RecD PPUPState <! From <! From
 
 -- |
 newtype ProposedUpdates era
   = ProposedUpdates (Map (KeyHash 'Genesis (Crypto era)) (ProposalBody era))
   deriving (Generic)
-
 deriving instance Show (Shelley.PParamsDelta era) => Show (ProposedUpdates era)
 
 deriving instance Eq (Shelley.PParamsDelta era) => Eq (ProposedUpdates era)
 
-deriving instance NFData (Shelley.PParamsDelta era) => NFData (ProposedUpdates era)
+deriving newtype instance NFData (Shelley.PParamsDelta era) => NFData (ProposedUpdates era)
 
 instance NoThunks (Shelley.PParamsDelta era) => NoThunks (ProposedUpdates era)
 
-instance
-  (Era era, ToCBOR (Shelley.PParamsDelta era)) =>
-  ToCBOR (ProposedUpdates era)
-  where
-  toCBOR _ = error "TODO"
+deriving newtype instance
+  ( CC.Crypto (Crypto era)
+  , ToCBOR (Shelley.PParamsDelta era)
+  , Typeable era
+  ) => ToCBOR (ProposedUpdates era)
 
-instance
-  (Era era, FromCBOR (Shelley.PParamsDelta era)) =>
-  FromCBOR (ProposedUpdates era)
-  where
-  fromCBOR = error "TODO"
+deriving newtype instance
+  ( CC.Crypto (Crypto era)
+  , Typeable era
+  , FromCBOR (ProposalBody era)
+  ) => FromCBOR (ProposedUpdates era)
 
 fromUtxoEnv :: UtxoEnv era -> One.PpupEnv era
 fromUtxoEnv (UtxoEnv slot pp _ genDelegs) = Shelley.PPUPEnv slot pp genDelegs
