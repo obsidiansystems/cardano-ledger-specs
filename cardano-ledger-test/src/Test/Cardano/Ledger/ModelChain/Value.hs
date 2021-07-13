@@ -15,17 +15,10 @@ module Test.Cardano.Ledger.ModelChain.Value where
 
 import Cardano.Ledger.Coin
 import Cardano.Ledger.Val
-import Control.Lens
 import Control.Monad
 import qualified Control.Monad.Except as Except
 import Data.Kind
 import Numeric.Natural
-
-data TyValueExpected
-  = ExpectAdaOnly
-  | ExpectAnyOutput
-
-type family ValueFeature' x :: TyValueExpected
 
 data ModelValueF (a :: Type) where
   ModelValue_Var :: a -> ModelValueF a

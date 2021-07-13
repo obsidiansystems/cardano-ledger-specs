@@ -36,9 +36,13 @@ import Data.Kind (Type)
 import qualified Data.Map as Map
 import Data.Proxy
 import Data.Set (Set)
+import Data.Traversable
+import qualified GHC.Exts as GHC
 import Numeric.Natural
+import qualified PlutusTx
 import Shelley.Spec.Ledger.STS.EraMapping ()
 import Test.Cardano.Ledger.ModelChain.Address
+import Test.Cardano.Ledger.ModelChain.FeatureSet
 import Test.Cardano.Ledger.ModelChain.Script
 import Test.Cardano.Ledger.ModelChain.Value
 
@@ -68,112 +72,20 @@ type family ElaborateValueType (valF :: TyValueExpected) crypto :: Type where
   ElaborateValueType 'ExpectAdaOnly _ = Coin
   ElaborateValueType 'ExpectAnyOutput crypto = Cardano.Ledger.Mary.Value.Value crypto
 
--- same convention as Data.Bool.bool;  True case comes last
-data IfSupportsMint a b (valF :: TyValueExpected) where
-  NoMintSupport :: a -> IfSupportsMint a b 'ExpectAdaOnly
-  SupportsMint :: b -> IfSupportsMint a b 'ExpectAnyOutput
-
-type family ValueFeature (a :: FeatureSet) where
-  ValueFeature ('FeatureSet v _) = v
-
-type family ScriptFeature (a :: FeatureSet) where
-  ScriptFeature ('FeatureSet _ s) = s
-
-data FeatureSet = FeatureSet TyValueExpected TyScriptFeature
-
-data FeatureTag (tag :: FeatureSet) where
-  FeatureTag :: ValueFeatureTag v -> ScriptFeatureTag s -> FeatureTag ('FeatureSet v s)
-
-data ValueFeatureTag (v :: TyValueExpected) where
-  ValueFeatureTag_AdaOnly :: ValueFeatureTag 'ExpectAdaOnly
-  ValueFeatureTag_AnyOutput :: ValueFeatureTag 'ExpectAnyOutput
-
-type family MaxValueFeature (a :: TyValueExpected) (b :: TyValueExpected) :: TyValueExpected where
-  MaxValueFeature 'ExpectAdaOnly b = b
-  MaxValueFeature a 'ExpectAdaOnly = a
-  MaxValueFeature 'ExpectAnyOutput b = b
-  MaxValueFeature a 'ExpectAnyOutput = a
-
--- law: () <$ filterFeatures (minFeatures x) y == () <$ filterFeatures x y
-class RequiredFeatures (f :: FeatureSet -> Type) where
-  -- minFeatures :: f a -> FeatureTag a
-  filterFeatures ::
-    KnownRequiredFeatures a =>
-    FeatureTag b ->
-    f a ->
-    Maybe (f b)
-
-class KnownValueFeature (v :: TyValueExpected) where reifyValueFeature :: proxy v -> ValueFeatureTag v
-
-instance KnownValueFeature 'ExpectAdaOnly where reifyValueFeature _ = ValueFeatureTag_AdaOnly
-
-instance KnownValueFeature 'ExpectAnyOutput where reifyValueFeature _ = ValueFeatureTag_AnyOutput
-
-hasKnownValueFeature :: ValueFeatureTag v -> (KnownValueFeature v => c) -> c
-hasKnownValueFeature = \case
-  ValueFeatureTag_AdaOnly -> \x -> x
-  ValueFeatureTag_AnyOutput -> \x -> x
-
-class
-  ( KnownValueFeature (ValueFeature a),
-    KnownScriptFeature (ScriptFeature a),
-    a ~ 'FeatureSet (ValueFeature a) (ScriptFeature a)
-  ) =>
-  KnownRequiredFeatures (a :: FeatureSet)
-  where
-  reifyRequiredFeatures :: proxy a -> FeatureTag a
-  reifyRequiredFeatures _ =
-    FeatureTag
-      (reifyValueFeature (Proxy :: Proxy (ValueFeature a)))
-      (reifyScriptFeature (Proxy :: Proxy (ScriptFeature a)))
-
-hasKnownRequiredFeatures :: FeatureTag a -> (KnownRequiredFeatures a => c) -> c
-hasKnownRequiredFeatures (FeatureTag v s) =
-  \x -> hasKnownValueFeature v (hasKnownScriptFeature s x)
-
-instance
-  ( KnownValueFeature v,
-    KnownScriptFeature s
-  ) =>
-  KnownRequiredFeatures ('FeatureSet v s)
-
-instance RequiredFeatures FeatureTag where
-  -- minFeatures = id
-  filterFeatures (FeatureTag v0 s0) (FeatureTag v1 s1) = FeatureTag <$> v <*> s
-    where
-      v = case (v0, v1) of
-        (ValueFeatureTag_AdaOnly, ValueFeatureTag_AdaOnly) -> Just v0
-        (ValueFeatureTag_AdaOnly, ValueFeatureTag_AnyOutput) -> Just v0
-        (ValueFeatureTag_AnyOutput, ValueFeatureTag_AdaOnly) -> Nothing
-        (ValueFeatureTag_AnyOutput, ValueFeatureTag_AnyOutput) -> Just v0
-
-      s = case (s0, s1) of
-        (ScriptFeatureTag_None, ScriptFeatureTag_None) -> Just s0
-        (ScriptFeatureTag_None, ScriptFeatureTag_Simple) -> Just s0
-        (ScriptFeatureTag_None, ScriptFeatureTag_PlutusV1) -> Just s0
-        (ScriptFeatureTag_Simple, ScriptFeatureTag_None) -> Nothing
-        (ScriptFeatureTag_Simple, ScriptFeatureTag_Simple) -> Just s0
-        (ScriptFeatureTag_Simple, ScriptFeatureTag_PlutusV1) -> Just s0
-        (ScriptFeatureTag_PlutusV1, ScriptFeatureTag_None) -> Nothing
-        (ScriptFeatureTag_PlutusV1, ScriptFeatureTag_Simple) -> Nothing
-        (ScriptFeatureTag_PlutusV1, ScriptFeatureTag_PlutusV1) -> Just s0
-
 instance RequiredFeatures ModelTxOut where
-  filterFeatures tag@(FeatureTag v _) (ModelTxOut addr qty) =
+  filterFeatures tag@(FeatureTag v _) (ModelTxOut addr qty dat) =
     hasKnownValueFeature v $
-      ModelTxOut addr <$> (filterFeatures tag =<< filterModelValue qty)
-
-reifyExpectAnyOutput :: ValueFeatureTag a -> Maybe (a :~: 'ExpectAnyOutput)
-reifyExpectAnyOutput = \case
-  ValueFeatureTag_AnyOutput -> Just Refl
-  ValueFeatureTag_AdaOnly -> Nothing
+      ModelTxOut
+        <$> filterModelAddress tag addr
+        <*> (filterFeatures tag =<< filterModelValue qty)
+        <*> (filterSupportsPlutus tag dat)
 
 filterModelValueVars ::
   forall a b c d.
   (KnownRequiredFeatures c, KnownValueFeature d) =>
   ModelValueVars a b ->
   Maybe (ModelValueVars c d)
-filterModelValueVars (ModelValue_Reward x) = Just (ModelValue_Reward x)
+filterModelValueVars (ModelValue_Reward x) = ModelValue_Reward <$> filterModelAddress (reifyRequiredFeatures (Proxy @c)) x
 filterModelValueVars (ModelValue_MA x ys) = do
   Refl <- reifyExpectAnyOutput (reifyValueFeature (Proxy @d))
   Refl <- reifyExpectAnyOutput (reifyValueFeature (Proxy @(ValueFeature c)))
@@ -205,12 +117,12 @@ instance KnownValueFeature v => RequiredFeatures (ModelValue v) where
 
 instance RequiredFeatures ModelTx where
   filterFeatures :: forall a b. KnownRequiredFeatures a => FeatureTag b -> ModelTx a -> Maybe (ModelTx b)
-  filterFeatures tag (ModelTx a b c d e f g) =
-    ModelTx a b
-      <$> (traverse . traverse) (filterFeatures tag) c
-      <*> (filterFeatures tag d)
-      <*> pure e
-      <*> traverse (filterFeatures tag) f
+  filterFeatures tag (ModelTx a ins outs fee dcert wdrl g) =
+    ModelTx a ins
+      <$> (traverse . traverse) (filterFeatures tag) outs
+      <*> (filterFeatures tag fee)
+      <*> traverse (filterFeatures tag) dcert
+      <*> fmap Map.fromList (for (Map.toList wdrl) $ \(k, v) -> (,) <$> filterModelAddress tag k <*> filterFeatures tag v) -- traverse (filterFeatures tag) f
       <*> case g of
         NoMintSupport () -> case tag of
           FeatureTag ValueFeatureTag_AdaOnly _ -> pure $ NoMintSupport ()
@@ -219,6 +131,17 @@ instance RequiredFeatures ModelTx where
           FeatureTag ValueFeatureTag_AdaOnly _ | g' == ModelValue (ModelValue_Inject $ Val.zero) -> pure $ NoMintSupport ()
           FeatureTag ValueFeatureTag_AdaOnly _ -> Nothing
           FeatureTag ValueFeatureTag_AnyOutput _ -> SupportsMint <$> filterFeatures tag g'
+
+filterModelAddress ::
+  FeatureTag b ->
+  ModelAddress a ->
+  Maybe (ModelAddress (ScriptFeature b))
+filterModelAddress (FeatureTag _ s) = \case
+  ModelAddress a -> Just (ModelAddress a)
+  ModelScriptAddress a -> case s of
+    ScriptFeatureTag_None -> Nothing
+    ScriptFeatureTag_Simple -> Nothing
+    ScriptFeatureTag_PlutusV1 -> Just (ModelScriptAddress a)
 
 instance RequiredFeatures ModelBlock where
   filterFeatures tag (ModelBlock slotNo txns) =
@@ -239,7 +162,7 @@ type ModelTxIn = ModelUTxOId
 type ModelMA era = Map.Map (ModelScript era) (Map.Map AssetName Integer)
 
 data ModelValueVars era (k :: TyValueExpected) where
-  ModelValue_Reward :: ModelAddress -> ModelValueVars era k
+  ModelValue_Reward :: ModelAddress (ScriptFeature era) -> ModelValueVars era k
   ModelValue_MA ::
     ('ExpectAnyOutput ~ ValueFeature era) =>
     Coin ->
@@ -255,7 +178,11 @@ deriving instance Ord (ModelValueVars era valF)
 newtype ModelValue k era = ModelValue {unModelValue :: ModelValueF (ModelValueVars era k)}
   deriving (Eq, Ord, Show)
 
-data ModelTxOut era = ModelTxOut ModelAddress (ModelValue (ValueFeature era) era)
+data ModelTxOut era = ModelTxOut
+  { _mtxo_address :: !(ModelAddress (ScriptFeature era)),
+    _mtxo_value :: !(ModelValue (ValueFeature era) era),
+    _mtxo_data :: !(IfSupportsPlutus' () (Maybe PlutusTx.Data) (ScriptFeature era))
+  }
   deriving (Eq, Ord, Show)
 
 newtype ModelUTxOId = ModelUTxOId {unModelUTxOId :: Integer}
@@ -266,38 +193,61 @@ data ModelTx (era :: FeatureSet) = ModelTx
     _mtxInputs :: !(Set ModelTxIn),
     _mtxOutputs :: ![(ModelUTxOId, ModelTxOut era)],
     _mtxFee :: !(ModelValue 'ExpectAdaOnly era),
-    _mtxDCert :: ![ModelDCert],
-    _mtxWdrl :: !(Map.Map ModelAddress (ModelValue 'ExpectAdaOnly era)),
+    _mtxDCert :: ![ModelDCert era],
+    _mtxWdrl :: !(Map.Map (ModelAddress (ScriptFeature era)) (ModelValue 'ExpectAdaOnly era)),
     _mtxMint :: !(IfSupportsMint () (ModelValue (ValueFeature era) era) (ValueFeature era))
   }
 
 data ModelBlock era = ModelBlock SlotNo [ModelTx era]
 
-data ModelBlocksMade = ModelBlocksMade (Map.Map ModelAddress Natural)
+newtype ModelPoolId = ModelPoolId {unModelPoolId :: String}
+  deriving (Eq, Ord, Show, GHC.IsString)
+
+data ModelBlocksMade = ModelBlocksMade (Map.Map ModelPoolId Natural)
 
 data ModelEpoch era = ModelEpoch [ModelBlock era] ModelBlocksMade
 
-data ModelDelegation = ModelDelegation
-  { _mdDelegator :: !ModelAddress,
-    _mdDelegatee :: !ModelAddress
+data ModelDelegation era = ModelDelegation
+  { _mdDelegator :: !(ModelAddress (ScriptFeature era)),
+    _mdDelegatee :: !ModelPoolId
   }
 
-data ModelPoolParams = ModelPoolParams
-  { _mppId :: !ModelAddress,
+instance RequiredFeatures ModelDelegation where
+  filterFeatures tag (ModelDelegation a b) =
+    ModelDelegation
+      <$> filterModelAddress tag a
+      <*> pure b
+
+data ModelPoolParams era = ModelPoolParams
+  { _mppId :: !ModelPoolId,
     _mppPledge :: !Coin,
     _mppCost :: !Coin,
     _mppMargin :: !UnitInterval,
-    _mppRAcnt :: !ModelAddress,
-    _mppOwners :: ![ModelAddress]
+    _mppRAcnt :: !(ModelAddress (ScriptFeature era)),
+    _mppOwners :: ![ModelAddress (ScriptFeature era)]
   }
 
+instance RequiredFeatures ModelPoolParams where
+  filterFeatures tag (ModelPoolParams poolId pledge cost margin rAcnt owners) =
+    ModelPoolParams poolId pledge cost margin
+      <$> filterModelAddress tag rAcnt
+      <*> traverse (filterModelAddress tag) owners
+
 -- ignores genesis delegation details.
-data ModelDCert
-  = ModelRegisterStake ModelAddress
-  | ModelDeRegisterStake ModelAddress
-  | ModelDelegate ModelDelegation
-  | ModelRegisterPool ModelPoolParams
-  | ModelRetirePool ModelAddress EpochNo
+data ModelDCert era
+  = ModelRegisterStake (ModelAddress (ScriptFeature era))
+  | ModelDeRegisterStake (ModelAddress (ScriptFeature era))
+  | ModelDelegate (ModelDelegation era)
+  | ModelRegisterPool (ModelPoolParams era)
+  | ModelRetirePool ModelPoolId EpochNo
+
+instance RequiredFeatures ModelDCert where
+  filterFeatures tag = \case
+    ModelRegisterStake a -> ModelRegisterStake <$> filterModelAddress tag a
+    ModelDeRegisterStake a -> ModelDeRegisterStake <$> filterModelAddress tag a
+    ModelDelegate a -> ModelDelegate <$> filterFeatures tag a
+    ModelRegisterPool a -> ModelRegisterPool <$> filterFeatures tag a
+    ModelRetirePool a b -> pure $ ModelRetirePool a b
 
 -- TODO: | ModelMIRCert Shelley.MIRPot (Map.Map ModelAddress DeltaCoin)
 

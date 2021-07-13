@@ -13,7 +13,6 @@ import Cardano.Ledger.Alonzo (AlonzoEra)
 import Cardano.Ledger.BaseTypes (unitIntervalFromRational)
 import Cardano.Ledger.Coin
 import qualified Cardano.Ledger.Core as Core
-import qualified Cardano.Ledger.Era
 import Cardano.Ledger.Mary.Value (AssetName (..))
 import Cardano.Ledger.Shelley (ShelleyEra)
 import Control.State.Transition.Extended
@@ -26,12 +25,14 @@ import qualified Data.Set as Set
 import Data.String (IsString (..))
 import Data.Typeable
 import GHC.Natural
+import qualified PlutusTx
 import Shelley.Spec.Ledger.API.Genesis
 import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.Elaborators.Alonzo ()
 import Test.Cardano.Ledger.Elaborators.Shelley ()
 import Test.Cardano.Ledger.ModelChain
 import Test.Cardano.Ledger.ModelChain.Address
+import Test.Cardano.Ledger.ModelChain.FeatureSet
 import Test.Cardano.Ledger.ModelChain.Script
 import Test.Cardano.Ledger.ModelChain.Utils
 import Test.Cardano.Ledger.ModelChain.Value
@@ -52,10 +53,10 @@ modelMACoin script assets =
 modelCoin :: Integer -> ModelValue era k
 modelCoin = ModelValue . ModelValue_Inject . Coin
 
-modelReward :: ModelAddress -> ModelValue era k
+modelReward :: ModelAddress (ScriptFeature era) -> ModelValue k era
 modelReward = ModelValue . ModelValue_Var . ModelValue_Reward
 
-modelRewards :: [ModelAddress] -> Map.Map ModelAddress (ModelValue era k)
+modelRewards :: [ModelAddress (ScriptFeature era)] -> Map.Map (ModelAddress (ScriptFeature era)) (ModelValue k era)
 modelRewards = foldMap $ \maddr -> Map.singleton maddr $ modelReward maddr
 
 infixl 6 $+
@@ -92,7 +93,6 @@ modelUnitTests ::
     Default (AdditionalGenesisConfig era),
     Eq (PredicateFailure (Core.EraRule "LEDGER" era)),
     Show (PredicateFailure (Core.EraRule "LEDGER" era)),
-    Cardano.Ledger.Era.Era era,
     Show (Core.Value era)
   ) =>
   proxy era ->
@@ -126,12 +126,12 @@ modelUnitTests proxy =
                       [ (modelTx 1)
                           { _mtxInputs = Set.fromList [0],
                             _mtxOutputs =
-                              [ (1, ModelTxOut "alice" (modelCoin 1_000_000_000_000 $- (modelCoin 100_000_000_000)))
+                              [ (1, modelTxOut "alice" (modelCoin 1_000_000_000_000 $- (modelCoin 100_000_000_000)))
                               ],
                             _mtxFee = modelCoin 100_000_000_000,
                             _mtxDCert =
                               [ ModelRegisterStake "alice",
-                                ModelRegisterPool (ModelPoolParams "pool1" (Coin 0) (Coin 0) (unitIntervalFromRational (0 % 1)) "alice" ["alice"]),
+                                ModelRegisterPool (ModelPoolParams "pool1" (Coin 0) (Coin 0) (unitIntervalFromRational (0 % 1)) "alice2" ["alice3"]),
                                 ModelDelegate (ModelDelegation "alice" "pool1")
                               ]
                           }
@@ -148,9 +148,9 @@ modelUnitTests proxy =
                       [ (modelTx 1)
                           { _mtxInputs = Set.fromList [1],
                             _mtxOutputs =
-                              [ (1, ModelTxOut "alice" (modelCoin 1_000_000_000_000 $- (2 $* modelCoin 100_000_000_000))),
-                                (2, ModelTxOut "bob" (modelReward "alice" $- modelCoin 100_000_000)),
-                                (3, ModelTxOut "carol" (modelCoin 100_000_000))
+                              [ (1, modelTxOut "alice" (modelCoin 1_000_000_000_000 $- (2 $* modelCoin 100_000_000_000))),
+                                (2, modelTxOut "bob" (modelReward "alice" $- modelCoin 100_000_000)),
+                                (3, modelTxOut "carol" (modelCoin 100_000_000))
                               ],
                             _mtxFee = modelCoin 100_000_000_000,
                             _mtxWdrl = modelRewards ["alice"]
@@ -171,8 +171,8 @@ modelUnitTests proxy =
                   [ (modelTx 1)
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ (1, ModelTxOut "bob" (modelCoin 100_000_000)),
-                            (2, ModelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
+                          [ (1, modelTxOut "bob" (modelCoin 100_000_000)),
+                            (2, modelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -192,7 +192,7 @@ modelUnitTests proxy =
                   1
                   [ (modelTx 1)
                       { _mtxInputs = (Set.fromList [0]),
-                        _mtxOutputs = [(1, ModelTxOut "bob" $ modelCoin 100_000_000)],
+                        _mtxOutputs = [(1, modelTxOut "bob" $ modelCoin 100_000_000)],
                         _mtxFee = modelCoin 1_000_000
                       }
                   ]
@@ -211,8 +211,8 @@ modelUnitTests proxy =
                   [ (modelTx 1)
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ (1, ModelTxOut "bob" (modelCoin 100_000_000)),
-                            (2, ModelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
+                          [ (1, modelTxOut "bob" (modelCoin 100_000_000)),
+                            (2, modelTxOut "alice" (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -222,8 +222,8 @@ modelUnitTests proxy =
                   [ (modelTx 2)
                       { _mtxInputs = Set.fromList [2],
                         _mtxOutputs =
-                          [ (3, ModelTxOut "bob" (modelCoin 100_000_000)),
-                            (4, ModelTxOut "alice" (modelCoin 1_000_000_000 $- 2 $* (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
+                          [ (3, modelTxOut "bob" (modelCoin 100_000_000)),
+                            (4, modelTxOut "alice" (modelCoin 1_000_000_000 $- 2 $* (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
                           ],
                         _mtxFee = modelCoin 1_000_000
                       }
@@ -232,14 +232,12 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "mint" $
-        filterChainModelProp
-          proxy
-          ( testChainModelInteraction
-              proxy
-              ( [ (0, "alice", Coin 1_000_000_000)
-                ]
-              )
-          )
+        ( testChainModelInteraction
+            proxy
+            ( [ (0, "alice", Coin 1_000_000_000)
+              ]
+            )
+        )
           [ ModelEpoch
               [ ModelBlock
                   1
@@ -247,7 +245,7 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
                           [ ( 1,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
                                     $+ modelMACoin purpleModelScript [("purp", 1234)]
@@ -262,14 +260,12 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "mint-2" $
-        filterChainModelProp
-          proxy
-          ( testChainModelInteraction
-              proxy
-              ( [ (0, "alice", Coin 1_000_000_000)
-                ]
-              )
-          )
+        ( testChainModelInteraction
+            proxy
+            ( [ (0, "alice", Coin 1_000_000_000)
+              ]
+            )
+        )
           [ ModelEpoch
               [ ModelBlock
                   1
@@ -277,7 +273,7 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
                           [ ( 1,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
                                     $+ modelMACoin bobCoinScript [("BOB", 1234)]
@@ -292,14 +288,12 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "mint-3" $
-        filterChainModelProp
-          proxy
-          ( testChainModelInteraction
-              proxy
-              ( [ (0, "alice", Coin 1_000_000_000)
-                ]
-              )
-          )
+        ( testChainModelInteraction
+            proxy
+            ( [ (0, "alice", Coin 1_000_000_000)
+              ]
+            )
+        )
           [ ModelEpoch
               [ ModelBlock
                   1
@@ -307,7 +301,7 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
                           [ ( 1,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
                                     $+ modelMACoin purpleModelScript [("BOB", 1234)]
@@ -321,14 +315,14 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [1],
                         _mtxOutputs =
                           [ ( 2,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (3 $* modelCoin 1_000_000)
                                     $+ modelMACoin purpleModelScript [("BOB", 1134)]
                                 )
                             ),
                             ( 3,
-                              ModelTxOut
+                              modelTxOut
                                 "carol"
                                 ( modelCoin 1_000_000
                                     $+ modelMACoin purpleModelScript [("BOB", 100)]
@@ -342,14 +336,12 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "mint-4" $
-        filterChainModelProp
-          proxy
-          ( testChainModelInteraction
-              proxy
-              ( [ (0, "alice", Coin 1_000_000_000)
-                ]
-              )
-          )
+        ( testChainModelInteraction
+            proxy
+            ( [ (0, "alice", Coin 1_000_000_000)
+              ]
+            )
+        )
           [ ModelEpoch
               [ ModelBlock
                   1
@@ -357,7 +349,7 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
                           [ ( 1,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
                                     $+ modelMACoin bobCoinScript [("BOB", 1234)]
@@ -371,14 +363,14 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [1],
                         _mtxOutputs =
                           [ ( 2,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (3 $* modelCoin 1_000_000)
                                     $+ modelMACoin bobCoinScript [("BOB", 1134)]
                                 )
                             ),
                             ( 3,
-                              ModelTxOut
+                              modelTxOut
                                 "carol"
                                 ( modelCoin 1_000_000
                                     $+ modelMACoin bobCoinScript [("BOB", 100)]
@@ -392,14 +384,12 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "mint-plutus" $
-        filterChainModelProp
-          proxy
-          ( testChainModelInteraction
-              proxy
-              ( [ (0, "alice", Coin 1_000_000_000)
-                ]
-              )
-          )
+        ( testChainModelInteraction
+            proxy
+            ( [ (0, "alice", Coin 1_000_000_000)
+              ]
+            )
+        )
           [ ModelEpoch
               [ ModelBlock
                   1
@@ -407,11 +397,42 @@ modelUnitTests proxy =
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
                           [ ( 1,
-                              ModelTxOut
+                              modelTxOut
                                 "alice"
                                 ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
                                     $+ modelMACoin (modelPlutusScript 0) [("purp", 1234)]
                                 )
+                            )
+                          ],
+                        _mtxFee = modelCoin 1_000_000,
+                        _mtxMint = SupportsMint (modelMACoin (modelPlutusScript 0) [("purp", 1234)])
+                      }
+                  ]
+              ]
+              mempty
+          ],
+      testProperty "tx-plutus" $
+        ( testChainModelInteraction
+            proxy
+            ( [ (0, "alice", Coin 1_000_000_000)
+              ]
+            )
+        )
+          [ ModelEpoch
+              [ ModelBlock
+                  1
+                  [ (modelTx 1)
+                      { _mtxInputs = Set.fromList [0],
+                        _mtxOutputs =
+                          [ ( 1,
+                              ( modelTxOut
+                                  "alice"
+                                  ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
+                                      $+ modelMACoin (modelPlutusScript 0) [("purp", 1234)]
+                                  )
+                              )
+                                { _mtxo_data = SupportsPlutus (Just $ PlutusTx.I 0)
+                                }
                             )
                           ],
                         _mtxFee = modelCoin 1_000_000,
@@ -430,6 +451,9 @@ modelUnitTests_ =
     [ modelUnitTests (Proxy :: Proxy (ShelleyEra C_Crypto)),
       modelUnitTests (Proxy :: Proxy (AlonzoEra C_Crypto))
     ]
+
+modelTxOut :: ModelAddress AllScriptFeatures -> ModelValue 'ExpectAnyOutput AllModelFeatures -> ModelTxOut AllModelFeatures
+modelTxOut a v = ModelTxOut a v (SupportsPlutus Nothing)
 
 defaultTestMain :: IO ()
 defaultTestMain = defaultMain modelUnitTests_

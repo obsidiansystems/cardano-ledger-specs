@@ -25,7 +25,7 @@ import Shelley.Spec.Ledger.STS.Utxow (UtxowPredicateFailure (..))
 import qualified Shelley.Spec.Ledger.Tx as Shelley
 import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.ModelChain
-import Test.Cardano.Ledger.ModelChain.Script
+import Test.Cardano.Ledger.ModelChain.FeatureSet
 import Test.Cardano.Ledger.ModelChain.Value
 
 instance

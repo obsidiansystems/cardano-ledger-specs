@@ -20,6 +20,7 @@ import Cardano.Ledger.Alonzo.Scripts (CostModel (..), ExUnits (..), Prices (..))
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
 import Cardano.Ledger.Alonzo.Translation ()
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
+import qualified Cardano.Ledger.Alonzo.TxBody as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import Cardano.Ledger.Coin
 import Cardano.Ledger.Crypto (DSIGN, KES)
@@ -37,7 +38,7 @@ import Shelley.Spec.Ledger.STS.Ledger
 import Shelley.Spec.Ledger.STS.Utxow
 import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.ModelChain
-import Test.Cardano.Ledger.ModelChain.Script
+import Test.Cardano.Ledger.ModelChain.FeatureSet
 import Test.Cardano.Ledger.ModelChain.Value
 
 instance Default AlonzoGenesis where
@@ -81,6 +82,7 @@ instance
 
   makeTimelockScript _ = Alonzo.TimelockScript
   makePlutusScript _ = id -- Alonzo.PlutusScript
+  makeExtendedTxOut _ (Alonzo.TxOut a v _) dh = Alonzo.TxOut a v (SJust dh)
 
   makeTxBody nes (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint) (SupportsPlutus redeemers)) =
     Alonzo.TxBody

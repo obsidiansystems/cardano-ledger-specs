@@ -42,6 +42,7 @@ library
     Test.Cardano.Ledger.TestableEra
     Test.Cardano.Ledger.ModelChain
     Test.Cardano.Ledger.ModelChain.Properties
+    Test.Cardano.Ledger.ModelChain.FeatureSet
     Test.Cardano.Ledger.ModelChain.Value
     Test.Cardano.Ledger.ModelChain.Address
     Test.Cardano.Ledger.ModelChain.Script

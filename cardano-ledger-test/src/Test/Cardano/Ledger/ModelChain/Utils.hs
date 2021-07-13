@@ -32,12 +32,14 @@ import qualified Shelley.Spec.Ledger.PParams as PParams
 import Test.Cardano.Ledger.Elaborators
 import Test.Cardano.Ledger.ModelChain
 import Test.Cardano.Ledger.ModelChain.Address
-import Test.Cardano.Ledger.ModelChain.Script
+import Test.Cardano.Ledger.ModelChain.FeatureSet
 import Test.Cardano.Ledger.ModelChain.Value
 import Test.Shelley.Spec.Ledger.Utils (testGlobals)
 import Test.Tasty.QuickCheck
 
 -- type ApplyBlockError era = (ApplyBlockTransitionError era)
+
+type ModelAddress' = ModelAddress ('TyScriptFeature 'False 'False)
 
 -- | apply a list of ModelEpoch to an empty ledger and return the resulting
 -- state, or the error if one occured
@@ -47,13 +49,14 @@ chainModelInteractionWith ::
     ElaborateEraModel era
   ) =>
   proxy era ->
-  [(ModelUTxOId, ModelAddress, Coin)] ->
+  [(ModelUTxOId, ModelAddress', Coin)] ->
   [ModelEpoch (EraFeatureSet era)] ->
   (Either (ElaborateBlockError era) (), (NewEpochState era, EraElaboratorState era))
-chainModelInteractionWith _ genesisAccounts modelBlocks =
+chainModelInteractionWith _ genesisAccounts0 modelBlocks =
   let -- TODO, pass this in as a generator.
 
       globals = testGlobals
+      genesisAccounts = (\(a, b, c) -> (a, liftModelAddress b, c)) <$> genesisAccounts0
 
       sg :: ShelleyGenesis era
       sg =
@@ -92,10 +95,10 @@ testChainModelInteractionWith ::
   ) =>
   proxy era ->
   (NewEpochState era -> EraElaboratorState era -> prop) ->
-  [(ModelUTxOId, ModelAddress, Coin)] ->
-  [ModelEpoch (EraFeatureSet era)] ->
+  [(ModelUTxOId, ModelAddress', Coin)] ->
+  [ModelEpoch AllModelFeatures] ->
   Property
-testChainModelInteractionWith proxy p a b =
+testChainModelInteractionWith proxy p a = filterChainModelProp proxy $ \b ->
   let (result, (nes, ees)) = chainModelInteractionWith proxy a b
    in case result of
         Right () -> property $! p nes ees
@@ -118,10 +121,10 @@ testChainModelInteractionRejection ::
   ) =>
   proxy era ->
   ModelPredicateFailure (EraFeatureSet era) ->
-  [(ModelUTxOId, ModelAddress, Coin)] ->
-  [ModelEpoch (EraFeatureSet era)] ->
+  [(ModelUTxOId, ModelAddress', Coin)] ->
+  [ModelEpoch AllModelFeatures] ->
   Property
-testChainModelInteractionRejection proxy e a b =
+testChainModelInteractionRejection proxy e a = filterChainModelProp proxy $ \b ->
   let (result, (nes, ees)) = chainModelInteractionWith proxy a b
    in case result of
         Left e' ->
@@ -147,12 +150,14 @@ testChainModelInteraction ::
     Show (Core.Value era)
   ) =>
   proxy era ->
-  [(ModelUTxOId, ModelAddress, Coin)] ->
-  [ModelEpoch (EraFeatureSet era)] ->
+  [(ModelUTxOId, ModelAddress', Coin)] ->
+  [ModelEpoch AllModelFeatures] ->
   Property
 testChainModelInteraction proxy = testChainModelInteractionWith proxy $ (\x y -> x `seq` y `seq` True)
 
-type AllModelFeatures = 'FeatureSet 'ExpectAnyOutput ('TyScriptFeature 'True 'True)
+type AllScriptFeatures = ('TyScriptFeature 'True 'True)
+
+type AllModelFeatures = 'FeatureSet 'ExpectAnyOutput AllScriptFeatures
 
 filterChainModelProp ::
   forall era proxy.
