@@ -50,7 +50,7 @@ instance
             ApplyTxError
               [UtxowFailure (UtxoFailure (ValueNotConservedUTxO x' y'))]
 
-  makeTxBody _ (TxBodyArguments maxTTL fee ins outs dcerts wdrl (NoMintSupport ()) (NoPlutusSupport ())) =
+  makeTxBody _ (TxBodyArguments maxTTL fee ins outs dcerts wdrl (NoMintSupport ()) (NoPlutusSupport ()) (NoPlutusSupport ())) =
     Shelley.TxBody
       { Shelley._inputs = ins,
         Shelley._outputs = outs,

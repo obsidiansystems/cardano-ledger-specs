@@ -31,6 +31,7 @@ import qualified Cardano.Crypto.VRF.Class (VerKeyVRF)
 import qualified Cardano.Ledger.Alonzo.Data as Alonzo
 import Cardano.Ledger.Alonzo.Scripts (ExUnits (..))
 import qualified Cardano.Ledger.Alonzo.Scripts as Alonzo
+import Cardano.Ledger.Alonzo.Tx (ScriptPurpose (..))
 import qualified Cardano.Ledger.Alonzo.Tx as Alonzo
 import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import Cardano.Ledger.BaseTypes
@@ -66,6 +67,7 @@ import qualified Data.Sequence.Strict as StrictSeq
 import qualified Data.Set as Set
 import Data.Traversable
 import Data.Tuple (swap)
+import Data.Typeable (Typeable)
 import Data.Void
 import Data.Word (Word64)
 import GHC.Records (HasField (..))
@@ -114,7 +116,7 @@ data ExpectedValueTypeC era where
     ExpectedValueTypeC era
 
 newtype ElaboratedScriptsCache era = ElaboratedScriptsCache
-  {unElaboratedScriptsCache :: Map.Map (ModelScript (EraScriptFeature era)) (ScriptHash (Crypto era), Core.Script era)}
+  {unElaboratedScriptsCache :: Map.Map (ScriptHash (Crypto era)) (Core.Script era)}
 
 instance Semigroup (ElaboratedScriptsCache era) where
   ElaboratedScriptsCache a <> ElaboratedScriptsCache b = ElaboratedScriptsCache $ Map.unionWith const a b
@@ -139,26 +141,39 @@ data EraElaboratorState era = EraElaboratorState
     _eesPools :: Map.Map ModelPoolId (TestPoolKey era),
     _eesTxIds :: Map.Map ModelTxId (Shelley.TxId (Crypto era)),
     _eesCurrentEpoch :: EpochNo,
-    _eesUTxOs :: Map.Map ModelUTxOId (ModelTxId' (Crypto era), (ModelAddress (EraScriptFeature era))),
+    _eesUTxOs :: Map.Map ModelUTxOId (TestUTxOInfo era),
     _eesCurrentSlot :: SlotNo,
     _eesStakeCredentials :: Map.Map (StakeCredential (Crypto era)) (ModelAddress (EraScriptFeature era))
   }
 
+deriving instance
+  (C.Crypto (Crypto era), Show (Core.Script era)) =>
+  Show (EraElaboratorState era)
+
+data TestUTxOInfo era = TestUTxOInfo
+  { _tuoi_txid :: ModelTxId' (Crypto era),
+    _tuoi_maddr :: ModelAddress (EraScriptFeature era),
+    _tuoi_data :: StrictMaybe (Alonzo.DataHash (Crypto era), (Alonzo.Data era))
+  }
+  deriving (Show)
+
 data EraElaboratorTxAccum era = EraElaboratorTxAccum
   { _eesPendingWitnessKeys :: [KeyPair 'Witness (Crypto era)],
     _eesScripts :: ElaboratedScriptsCache era,
-    _eesRedeemers :: [TestRedeemer era]
+    _eesRedeemers :: [TestRedeemer era],
+    _eetaDats :: Alonzo.TxDats era
   }
 
-instance Semigroup (EraElaboratorTxAccum era) where
-  EraElaboratorTxAccum a b c <> EraElaboratorTxAccum a' b' c' =
+instance Typeable era => Semigroup (EraElaboratorTxAccum era) where
+  EraElaboratorTxAccum a b c d <> EraElaboratorTxAccum a' b' c' d' =
     EraElaboratorTxAccum
       (a <> a')
       (b <> b')
       (c <> c')
+      (d <> d')
 
-instance Monoid (EraElaboratorTxAccum era) where
-  mempty = EraElaboratorTxAccum mempty mempty mempty
+instance Typeable era => Monoid (EraElaboratorTxAccum era) where
+  mempty = EraElaboratorTxAccum mempty mempty mempty mempty
 
 -- under normal circumstances, this arises during elaboration, at which time the
 -- era is already known
@@ -182,10 +197,6 @@ elaborateModelRedeemer ::
 elaborateModelRedeemer tx (TestRedeemer scriptPurpose dat exUnits) =
   (,) <$> (Alonzo.rdptr @era tx scriptPurpose) <*> pure (Alonzo.Data dat, exUnits)
 
-deriving instance
-  (C.Crypto (Crypto era), Show (Core.Script era)) =>
-  Show (EraElaboratorState era)
-
 eesUnusedKeyPairs :: Functor f => (Word64 -> f Word64) -> EraElaboratorState era -> f (EraElaboratorState era)
 eesUnusedKeyPairs a2fb s = (\b -> s {_eesUnusedKeyPairs = b}) <$> a2fb (_eesUnusedKeyPairs s)
 
@@ -204,7 +215,7 @@ eesCurrentEpoch a2fb s = (\b -> s {_eesCurrentEpoch = b}) <$> a2fb (_eesCurrentE
 eesStakeCredentials :: Lens' (EraElaboratorState era) (Map.Map (StakeCredential (Crypto era)) (ModelAddress (EraScriptFeature era)))
 eesStakeCredentials a2fb s = (\b -> s {_eesStakeCredentials = b}) <$> a2fb (_eesStakeCredentials s)
 
-eesUTxOs :: Lens' (EraElaboratorState era) (Map.Map ModelUTxOId (ModelTxId' (Crypto era), (ModelAddress (EraScriptFeature era))))
+eesUTxOs :: Lens' (EraElaboratorState era) (Map.Map ModelUTxOId (TestUTxOInfo era))
 eesUTxOs a2fb s = (\b -> s {_eesUTxOs = b}) <$> a2fb (_eesUTxOs s)
 
 eesCurrentSlot :: Lens' (EraElaboratorState era) SlotNo
@@ -359,12 +370,16 @@ getStakingKeyHashFor proxy maddr =
 data TestPoolKey era = TestPoolKey
   { _tpkHash :: KeyHash 'StakePool (Crypto era),
     _tpkVRFHash :: Hash.Hash (C.HASH (Crypto era)) (Cardano.Crypto.VRF.Class.VerKeyVRF (C.VRF (Crypto era))),
-    _tpkKey :: TestKeyKeyed 'StakePool (Crypto era) -- TestKey 'StakePool era
+    _tpkKey :: KeyPair 'StakePool (Crypto era)
   }
 
-deriving instance Eq (TestPoolKey era)
+instance Eq (TestPoolKey era) where
+  a == b = compare a b == EQ
 
-deriving instance Ord (TestPoolKey era)
+instance Ord (TestPoolKey era) where
+  compare =
+    on compare _tpkHash
+      <> on compare _tpkVRFHash
 
 deriving instance (C.Crypto (Crypto era)) => Show (TestPoolKey era)
 
@@ -399,13 +414,9 @@ elaboratePoolId _ seed (ModelPoolId _) =
       poolKey@(KeyPair _ _) = uncurry KeyPair . swap . mkKeyPair @(Crypto era) $ RawSeed 1 1 0 0 seed
       poolHash = hashKey $ vKey poolKey
    in TestPoolKey
-        { _tpkHash =
-            -- error "elaboratePoolId::tpkHash"
-            poolHash,
+        { _tpkHash = poolHash,
           _tpkVRFHash = hashVerKeyVRF vrf',
-          _tpkKey -- error "elaboratePoolId::tpkKey"
-          =
-            TestKeyKeyed poolKey poolHash
+          _tpkKey = poolKey
         }
 
 liftModelAddress ::
@@ -453,7 +464,7 @@ instance Default (EraElaboratorState era) where
         _eesUTxOs = Map.empty
       }
 
-tellScriptWitness ::
+tellMintWitness ::
   ( ElaborateEraModel era,
     MonadState (NewEpochState era, EraElaboratorState era) m
   ) =>
@@ -462,25 +473,17 @@ tellScriptWitness ::
   ScriptHash (Crypto era) ->
   Core.Script era ->
   Writer.WriterT (EraElaboratorTxAccum era) m ()
-tellScriptWitness _ modelPolicy policyHash realPolicy = do
-  () <- case modelPolicy of
-    ModelScript_PlutusV1 _s1 ->
-      Writer.tell $
-        mempty
-          { _eesRedeemers =
-              pure $
-                TestRedeemer
-                  (Alonzo.Minting $ PolicyID policyHash)
-                  (PlutusTx.I 0)
-                  (ExUnits 10 10)
-          }
-    ModelScript_Timelock tl -> for_ (modelScriptNeededSigs tl) $ \mAddr -> do
-      myKeys <- State.state $ State.runState $ zoom _2 $ getPmtKeyFor (Proxy :: Proxy era) mAddr
-      tellWitness myKeys
+tellMintWitness _ modelPolicy policyHash realPolicy = do
   Writer.tell $
     mempty
-      { _eesScripts = ElaboratedScriptsCache $ Map.singleton modelPolicy (policyHash, realPolicy)
+      { _eesScripts = ElaboratedScriptsCache $ Map.singleton policyHash realPolicy
       }
+  myKeys :: [TestKey 'Payment era] <- case modelPolicy of
+    ModelScript_PlutusV1 _s1 ->
+      pure [TestKey_Script $ TestKeyScript realPolicy policyHash]
+    ModelScript_Timelock tl -> for (modelScriptNeededSigs tl) $ \mAddr -> do
+      State.state $ State.runState $ zoom _2 $ getPmtKeyFor (Proxy :: Proxy era) mAddr
+  for_ myKeys $ tellWitness (Minting $ PolicyID policyHash)
 
 noScriptAction ::
   Applicative m =>
@@ -532,14 +535,18 @@ mkTxOut mtxId idx mutxoId (ModelTxOut mAddr (ModelValue mValue) mDat) = (=<<) Ex
   State.state $
     State.runState $
       Except.runExceptT $ do
-        _2 . eesUTxOs . at mutxoId .= Just (Right (mtxId, idx), mAddr)
         addr <- zoom _2 $ getAddrFor (Proxy :: Proxy era) mAddr
         val :: Core.Value era <- either (Except.throwError . ElaborateBlockError_TxValue @era) pure =<< evalModelValue (lookupModelValue noScriptAction) mValue
         let txo = makeTxOut (Proxy :: Proxy era) addr val
-        pure $ case mDat of
-          NoPlutusSupport () -> txo
-          SupportsPlutus Nothing -> txo
-          SupportsPlutus (Just dat) -> makeExtendedTxOut (Proxy @era) txo (Alonzo.hashData @era $ Alonzo.Data dat)
+            (dat, txo') = case mDat of
+              NoPlutusSupport () -> (SNothing, txo)
+              SupportsPlutus Nothing -> (SNothing, txo)
+              SupportsPlutus (Just dat') ->
+                let d = Alonzo.Data dat'
+                    dh = (Alonzo.hashData @era $ d)
+                 in (SJust (dh, d), makeExtendedTxOut (Proxy @era) txo dh)
+        _2 . eesUTxOs . at mutxoId .= Just (TestUTxOInfo (Right (mtxId, idx)) mAddr dat)
+        pure txo'
 
 mkTxIn ::
   forall m era.
@@ -555,28 +562,47 @@ mkTxIn moid = do
   case mutxo of
     -- TODO: handle missing txnIds more gracefully?
     Nothing -> pure mempty
-    Just (mutxo', mAddr) -> do
+    Just (TestUTxOInfo mutxo' mAddr mDat) -> do
       myKeys <- getPmtKeyFor (Proxy :: Proxy era) mAddr
-      tellWitness myKeys
 
-      case mutxo' of
+      for_ mDat $ \(k, v) ->
+        Writer.tell $
+          mempty
+            { _eetaDats = Alonzo.TxDats $ Map.singleton k v
+            }
+
+      txins <- case mutxo' of
         Left txin -> pure (Set.singleton txin)
         Right (mtxId, idx) ->
           pure . maybe Set.empty Set.singleton $ Shelley.TxIn <$> Map.lookup mtxId (_eesTxIds ses) <*> pure idx
+      for_ txins $ \txin -> tellWitness (Spending txin) myKeys
+      pure txins
 
--- | accumulate a witness while elaborating a ModelTx.
-tellWitness ::
+tellWitnessKey ::
   forall kr m era.
-  ( Writer.MonadWriter (EraElaboratorTxAccum era) m
-  ) =>
-  TestKey kr era ->
+  Writer.MonadWriter (EraElaboratorTxAccum era) m =>
+  KeyPair kr (Crypto era) ->
   m ()
-tellWitness (TestKey_Keyed (TestKeyKeyed keyP _)) =
+tellWitnessKey keyP = do
   Writer.tell $
     mempty
       { _eesPendingWitnessKeys = [coerceKeyRole @_ @_ @(Crypto era) keyP]
       }
-tellWitness (TestKey_Script (TestKeyScript {})) = error "tellWitness Script"
+
+-- | accumulate a witness while elaborating a ModelTx.
+tellWitness ::
+  forall kr m era.
+  Writer.MonadWriter (EraElaboratorTxAccum era) m =>
+  ScriptPurpose (Crypto era) ->
+  TestKey kr era ->
+  m ()
+tellWitness _ (TestKey_Keyed (TestKeyKeyed keyP _)) = tellWitnessKey keyP
+tellWitness sp (TestKey_Script (TestKeyScript realPolicy policyHash)) = do
+  Writer.tell $
+    mempty
+      { _eesRedeemers = pure $ TestRedeemer sp (PlutusTx.I 1) (ExUnits 10 10),
+        _eesScripts = ElaboratedScriptsCache $ Map.singleton policyHash realPolicy
+      }
 
 -- | return all accumulated witnesses.
 elaborateWitnesses ::
@@ -638,7 +664,9 @@ data TxBodyArguments era = TxBodyArguments
     _txBodyArguments_withdrawals :: !(Shelley.Wdrl (Crypto era)),
     -- | mint
     _txBodyArguments_mint :: !(IfSupportsMint () (Core.Value era) (EraValueFeature era)),
-    _txBodyArguments_redeemers :: !(IfSupportsPlutus' () (StrictMaybe (Alonzo.Redeemers era, Alonzo.TxDats era)) (EraScriptFeature era))
+    _txBodyArguments_redeemers :: !(IfSupportsPlutus' () (StrictMaybe (Alonzo.Redeemers era, Alonzo.TxDats era)) (EraScriptFeature era)),
+    -- | collateral
+    _txBodyArguments_collateral :: !(IfSupportsPlutus' () (Set.Set (Shelley.TxIn (Crypto era))) (EraScriptFeature era))
   }
 
 data TxWitnessArguments era = TxWitnessArguments
@@ -671,7 +699,7 @@ mkTxWitnessArguments ::
   EraElaboratorTxAccum era ->
   TxBodyArguments era ->
   m (Core.TxBody era, TxWitnessArguments era)
-mkTxWitnessArguments nes (EraElaboratorTxAccum pendingWits (ElaboratedScriptsCache pendingScripts0) pendingRedeemers) txBodyArguments = do
+mkTxWitnessArguments nes (EraElaboratorTxAccum pendingWits (ElaboratedScriptsCache pendingScripts) pendingRedeemers pendingDats) txBodyArguments = do
   let fakeTxBody = makeTxBody @era nes $ txBodyArguments
   redeemers <- case reifySupportsPlutus (Proxy @(EraScriptFeature era)) of
     NoPlutusSupport () -> pure (NoPlutusSupport ())
@@ -681,7 +709,7 @@ mkTxWitnessArguments nes (EraElaboratorTxAccum pendingWits (ElaboratedScriptsCac
         SJust xs -> do
           let redeemers = Alonzo.Redeemers $ Map.fromList xs
               txDats = foldMapOf (traverse . _2 . _1) (\d -> Alonzo.TxDats $ Map.singleton (Alonzo.hashData d) d) xs
-          pure (SupportsPlutus (redeemers, txDats))
+          pure (SupportsPlutus (redeemers, pendingDats <> txDats))
   let bodyHash = hashAnnotated realTxBody
       realTxBody = case redeemers of
         SupportsPlutus (r, _)
@@ -694,7 +722,6 @@ mkTxWitnessArguments nes (EraElaboratorTxAccum pendingWits (ElaboratedScriptsCac
         NoPlutusSupport () -> fakeTxBody
       witVKey = elaborateWitnesses (Proxy :: Proxy era) pendingWits bodyHash
 
-      pendingScripts = Map.fromList $ toList pendingScripts0
       scripts :: IfSupportsScript () (Map.Map (ScriptHash (Crypto era)) (Core.Script era)) (EraScriptFeature era)
       scripts = case reifyScriptFeature (Proxy @(EraScriptFeature era)) of
         ScriptFeatureTag_None -> NoScriptSupport ()
@@ -794,7 +821,7 @@ class
     utxo0 <- fmap Map.fromList $
       for genesisAccounts $ \(oid, mAddr, coins) -> do
         addr <- getAddrFor (Proxy :: Proxy era) mAddr
-        eesUTxOs . at oid .= Just (Left (initialFundsPseudoTxIn addr), mAddr)
+        eesUTxOs . at oid .= Just (TestUTxOInfo (Left (initialFundsPseudoTxIn addr)) mAddr SNothing)
         pure (addr, coins)
 
     pure $ initialState sg {sgInitialFunds = Map.unionWith const utxo0 $ sgInitialFunds sg} additionalGenesesConfig
@@ -885,7 +912,7 @@ class
     ( Either (ElaborateBlockError era) (Era.TxInBlock era),
       (NewEpochState era, EraElaboratorState era)
     )
-  elaborateTx proxy _ maxTTL (ModelTx mtxId mtxInputs mtxOutputs (ModelValue mtxFee) mtxDCert mtxWdrl mtxMint) = State.runState $
+  elaborateTx proxy _ maxTTL (ModelTx mtxId mtxInputs mtxOutputs (ModelValue mtxFee) mtxDCert mtxWdrl mtxMint mtxCollateral) = State.runState $
     Except.runExceptT $ do
       (txBodyArguments, txAccum) <- Writer.runWriterT $ do
         let liftEvalModelValue ::
@@ -908,15 +935,17 @@ class
 
         outs <- ifor mtxOutputs $ \idx (oid, o) -> mkTxOut mtxId (toEnum @Natural idx) oid o
         ins :: Set.Set (Shelley.TxIn (Crypto era)) <- zoom _2 $ fmap fold $ traverse mkTxIn $ Set.toList mtxInputs
+        cins <- traverseSupportsPlutus (zoom _2 . fmap fold . traverse mkTxIn . Set.toList) mtxCollateral
         dcerts <- traverse (mkDCerts (Proxy :: Proxy era)) mtxDCert
         wdrl :: Map.Map (RewardAcnt (Crypto era)) Coin <-
           fmap Map.fromList $
             for (Map.toList mtxWdrl) $ \(mAddr, ModelValue mqty) -> do
               stakeCredential <- zoom _2 $ getStakeCredenetialFor proxy mAddr
               stakeKey <- zoom _2 $ getStakeKeyFor proxy mAddr
-              tellWitness stakeKey
+              let ra = RewardAcnt Testnet stakeCredential
+              tellWitness (Rewarding ra) stakeKey
               qty <- liftEvalModelValue ElaborateBlockError_Fee $ evalModelValue (lookupModelValue noScriptAction) mqty
-              pure (RewardAcnt Testnet stakeCredential, qty)
+              pure (ra, qty)
         fee :: Coin <-
           liftEvalModelValue ElaborateBlockError_Fee $
             evalModelValue (lookupModelValue noScriptAction) mtxFee
@@ -929,7 +958,7 @@ class
               SupportsMint m' ->
                 fmap SupportsMint $
                   liftEvalModelValue ElaborateBlockError_TxValue $
-                    evalModelValue (lookupModelValue (tellScriptWitness @era)) (unModelValue m')
+                    evalModelValue (lookupModelValue (tellMintWitness @era)) (unModelValue m')
 
         pure $
           TxBodyArguments
@@ -940,7 +969,8 @@ class
               _txBodyArguments_delegCerts = StrictSeq.fromList dcerts,
               _txBodyArguments_withdrawals = Shelley.Wdrl wdrl,
               _txBodyArguments_mint = mint,
-              _txBodyArguments_redeemers = ifSupportsPlutus (Proxy @(EraScriptFeature era)) () SNothing
+              _txBodyArguments_redeemers = ifSupportsPlutus (Proxy @(EraScriptFeature era)) () SNothing,
+              _txBodyArguments_collateral = cins
             }
 
       nes <- State.gets fst
@@ -1015,8 +1045,8 @@ class
     ModelDCert (EraFeatureSet era) ->
     EraElaboratorState era ->
     ((DCert (Crypto era), EraElaboratorTxAccum era), EraElaboratorState era)
-  elaborateDCert proxy =
-    State.runState . Writer.runWriterT . \case
+  elaborateDCert proxy mdc = State.runState . Writer.runWriterT $ do
+    (dc, dcwits) <- Writer.runWriterT $ case mdc of
       ModelRegisterStake maddr ->
         DCertDeleg . RegKey
           <$> getStakeCredenetialFor proxy maddr
@@ -1027,13 +1057,13 @@ class
         dtor <- getStakeCredenetialFor proxy mdelegator
         dtee <- _tpkHash <$> getTestPoolKeyImpl proxy mdelegatee
         stakeKey <- getStakeKeyFor proxy mdelegator
-        tellWitness stakeKey
+        Writer.tell [stakeKey]
         pure $ (DCertDeleg . Delegate) $ Delegation dtor dtee
       ModelRegisterPool (ModelPoolParams mPoolId pledge cost margin mRAcnt mOwners) -> do
         TestPoolKey poolId poolVRF poolKey <- getTestPoolKeyImpl proxy mPoolId
-        tellWitness $ TestKey_Keyed poolKey
+        lift $ tellWitnessKey poolKey
         poolOwners <- Set.fromList <$> traverse (getStakingKeyHashFor proxy) mOwners
-        for_ mOwners $ tellWitness <=< getStakeKeyFor proxy
+        for_ mOwners $ Writer.tell . pure <=< getStakeKeyFor proxy
         rAcnt <- RewardAcnt Testnet <$> getStakeCredenetialFor proxy mRAcnt
         pure $
           (DCertPool . RegPool) $
@@ -1051,6 +1081,8 @@ class
       ModelRetirePool maddr epochNo -> do
         TestPoolKey pool _ _ <- getTestPoolKeyImpl proxy maddr
         pure $ DCertPool $ RetirePool pool epochNo
+    for_ dcwits $ tellWitness (Certifying dc)
+    pure dc
 
 -- TODO: maybe useful someday
 -- ModelMIRCert srcPot mRewards ->

@@ -84,10 +84,10 @@ instance
   makePlutusScript _ = id -- Alonzo.PlutusScript
   makeExtendedTxOut _ (Alonzo.TxOut a v _) dh = Alonzo.TxOut a v (SJust dh)
 
-  makeTxBody nes (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint) (SupportsPlutus redeemers)) =
+  makeTxBody nes (TxBodyArguments maxTTL fee ins outs dcerts wdrl (SupportsMint mint) (SupportsPlutus redeemers) (SupportsPlutus cins)) =
     Alonzo.TxBody
       { Alonzo.inputs = ins,
-        Alonzo.collateral = ins,
+        Alonzo.collateral = cins,
         Alonzo.outputs = outs,
         Alonzo.txcerts = dcerts,
         Alonzo.txwdrls = wdrl,

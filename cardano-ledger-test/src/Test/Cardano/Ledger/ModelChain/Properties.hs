@@ -384,17 +384,17 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "mint-plutus" $
-        ( testChainModelInteraction
-            proxy
-            ( [ (0, "alice", Coin 1_000_000_000)
-              ]
-            )
-        )
+        testChainModelInteraction
+          proxy
+          ( [ (0, "alice", Coin 1_000_000_000)
+            ]
+          )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
                       { _mtxInputs = Set.fromList [0],
+                        _mtxCollateral = SupportsPlutus (Set.fromList [0]),
                         _mtxOutputs =
                           [ ( 1,
                               modelTxOut
@@ -412,31 +412,37 @@ modelUnitTests proxy =
               mempty
           ],
       testProperty "tx-plutus" $
-        ( testChainModelInteraction
-            proxy
-            ( [ (0, "alice", Coin 1_000_000_000)
-              ]
-            )
-        )
+        testChainModelInteraction
+          proxy
+          ( [ (0, "alice", Coin 1_000_000_000)
+            ]
+          )
           [ ModelEpoch
               [ ModelBlock
                   1
                   [ (modelTx 1)
                       { _mtxInputs = Set.fromList [0],
                         _mtxOutputs =
-                          [ ( 1,
-                              ( modelTxOut
-                                  "alice"
-                                  ( modelCoin 1_000_000_000 $- (modelCoin 1_000_000)
-                                      $+ modelMACoin (modelPlutusScript 0) [("purp", 1234)]
-                                  )
-                              )
-                                { _mtxo_data = SupportsPlutus (Just $ PlutusTx.I 0)
+                          [ (1, modelTxOut "bob" (modelCoin 100_000_000)),
+                            ( 2,
+                              (modelTxOut (ModelScriptAddress $ ModelPlutusScript_AlwaysSucceeds 2) (modelCoin 1_000_000_000 $- (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
+                                { _mtxo_data = SupportsPlutus $ Just $ PlutusTx.I 7
                                 }
                             )
                           ],
-                        _mtxFee = modelCoin 1_000_000,
-                        _mtxMint = SupportsMint (modelMACoin (modelPlutusScript 0) [("purp", 1234)])
+                        _mtxFee = modelCoin 1_000_000
+                      }
+                  ],
+                ModelBlock
+                  2
+                  [ (modelTx 2)
+                      { _mtxInputs = Set.fromList [2],
+                        _mtxCollateral = SupportsPlutus (Set.fromList [1]),
+                        _mtxOutputs =
+                          [ (3, modelTxOut "bob" (modelCoin 100_000_000)),
+                            (4, modelTxOut "alice" (modelCoin 1_000_000_000 $- 2 $* (modelCoin 100_000_000 $+ modelCoin 1_000_000)))
+                          ],
+                        _mtxFee = modelCoin 1_000_000
                       }
                   ]
               ]

@@ -32,10 +32,12 @@ import qualified Cardano.Ledger.Mary.Value
 import qualified Cardano.Ledger.Val as Val
 import Cardano.Slotting.Slot hiding (at)
 import Control.Lens
+import Data.Foldable (fold)
 import Data.Kind (Type)
 import qualified Data.Map as Map
 import Data.Proxy
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Traversable
 import qualified GHC.Exts as GHC
 import Numeric.Natural
@@ -117,7 +119,7 @@ instance KnownValueFeature v => RequiredFeatures (ModelValue v) where
 
 instance RequiredFeatures ModelTx where
   filterFeatures :: forall a b. KnownRequiredFeatures a => FeatureTag b -> ModelTx a -> Maybe (ModelTx b)
-  filterFeatures tag (ModelTx a ins outs fee dcert wdrl g) =
+  filterFeatures tag (ModelTx a ins outs fee dcert wdrl g cins) =
     ModelTx a ins
       <$> (traverse . traverse) (filterFeatures tag) outs
       <*> (filterFeatures tag fee)
@@ -131,6 +133,11 @@ instance RequiredFeatures ModelTx where
           FeatureTag ValueFeatureTag_AdaOnly _ | g' == ModelValue (ModelValue_Inject $ Val.zero) -> pure $ NoMintSupport ()
           FeatureTag ValueFeatureTag_AdaOnly _ -> Nothing
           FeatureTag ValueFeatureTag_AnyOutput _ -> SupportsMint <$> filterFeatures tag g'
+      <*> let setNotEmpty :: Set x -> Maybe (Set x)
+              setNotEmpty x
+                | Set.null x = Nothing
+                | otherwise = Just x
+           in (fmap (mapSupportsPlutus fold) $ filterSupportsPlutus tag $ mapSupportsPlutus setNotEmpty cins)
 
 filterModelAddress ::
   FeatureTag b ->
@@ -195,7 +202,8 @@ data ModelTx (era :: FeatureSet) = ModelTx
     _mtxFee :: !(ModelValue 'ExpectAdaOnly era),
     _mtxDCert :: ![ModelDCert era],
     _mtxWdrl :: !(Map.Map (ModelAddress (ScriptFeature era)) (ModelValue 'ExpectAdaOnly era)),
-    _mtxMint :: !(IfSupportsMint () (ModelValue (ValueFeature era) era) (ValueFeature era))
+    _mtxMint :: !(IfSupportsMint () (ModelValue (ValueFeature era) era) (ValueFeature era)),
+    _mtxCollateral :: !(IfSupportsPlutus' () (Set ModelTxIn) (ScriptFeature era))
   }
 
 data ModelBlock era = ModelBlock SlotNo [ModelTx era]

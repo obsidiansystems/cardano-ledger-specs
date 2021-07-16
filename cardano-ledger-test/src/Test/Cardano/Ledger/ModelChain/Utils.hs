@@ -185,5 +185,6 @@ modelTx txId =
       _mtxMint = case reifyRequiredFeatures (Proxy :: Proxy era) of
         FeatureTag v _ -> case v of
           ValueFeatureTag_AdaOnly -> NoMintSupport ()
-          ValueFeatureTag_AnyOutput -> SupportsMint $ ModelValue $ ModelValue_Inject $ Coin 0
+          ValueFeatureTag_AnyOutput -> SupportsMint $ ModelValue $ ModelValue_Inject $ Coin 0,
+      _mtxCollateral = mapSupportsPlutus (const $ Set.empty) $ reifySupportsPlutus (Proxy :: Proxy (ScriptFeature era))
     }

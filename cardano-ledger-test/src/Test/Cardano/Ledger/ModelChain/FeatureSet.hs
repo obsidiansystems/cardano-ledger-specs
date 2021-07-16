@@ -85,6 +85,15 @@ mapSupportsPlutus f = \case
   NoPlutusSupport x -> NoPlutusSupport x
   SupportsPlutus x -> SupportsPlutus (f x)
 
+traverseSupportsPlutus ::
+  Applicative m =>
+  (a -> m b) ->
+  IfSupportsPlutus' x a s ->
+  m (IfSupportsPlutus' x b s)
+traverseSupportsPlutus f = \case
+  NoPlutusSupport x -> pure $ NoPlutusSupport x
+  SupportsPlutus x -> SupportsPlutus <$> f x
+
 reifySupportsPlutus ::
   KnownScriptFeature s => proxy s -> IfSupportsPlutus' () () s
 reifySupportsPlutus proxy = case reifyScriptFeature proxy of
