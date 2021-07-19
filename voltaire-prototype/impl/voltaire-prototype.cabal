@@ -53,29 +53,21 @@ library
     Cardano.Ledger.Voltaire.Prototype.Rules.Two.NewEpoch
     Cardano.Ledger.Voltaire.Prototype.TxBody
 
-  -- other-extensions:
   build-depends:
     bytestring,
-    -- base16-bytestring,
     cardano-binary,
-    -- cardano-crypto-class,
     cardano-ledger-core,
     cardano-ledger-shelley-ma,
     cardano-prelude,
     cardano-slotting,
-    -- cborg,
     containers,
     data-default-class,
     deepseq,
-    -- groups,
     mtl,
     nothunks,
-    -- prettyprinter,
-    -- primitive,
     shelley-spec-ledger,
     small-steps,
     strict-containers,
-    -- text,
     transformers,
     groups,
     generic-data,

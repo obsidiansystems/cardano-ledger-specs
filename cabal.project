@@ -19,7 +19,6 @@ packages:
   shelley-ma/shelley-ma-test
   example-shelley/
   voltaire-prototype/impl
---  voltaire-prototype/voltaire-prototype-test
 
 -- Always wrtie GHC env files, because they are needed by the doctests.
 write-ghc-environment-files: always

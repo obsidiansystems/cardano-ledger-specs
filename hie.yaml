@@ -80,12 +80,3 @@ cradle:
 
     - path: "voltaire-prototype/impl/src"
       component: "lib:voltaire-prototype"
-
-    - path: "example-shelley/src"
-      component: "lib:cardano-ledger-example-shelley"
-
-    - path: "example-shelley/test"
-      component: "cardano-ledger-example-shelley:lib:test"
-
-    - path: "example-shelley/test"
-      component: "cardano-ledger-example-shelley:test:cardano-ledger-example-shelley-tests"

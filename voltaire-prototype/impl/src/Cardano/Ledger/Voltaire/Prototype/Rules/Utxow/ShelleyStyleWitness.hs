@@ -91,7 +91,7 @@ type ShelleyStyleWitnessNeeds era =
 --  is that the above 'ShelleyStyleWitnessNeeds' is used as a constraint and
 -- 'Cardano.Ledger.Voltaire.Prototype.Rules.LedgerState.witsVKeyNeeded'
 -- is used instead of 'Shelley.Spec.Ledger.LedgerState.witsVKeyNeeded'
--- 
+--
 shelleyStyleWitness ::
   forall era utxow.
   ( Era era,
@@ -104,7 +104,6 @@ shelleyStyleWitness ::
     Environment (utxow era) ~ UtxoEnv era,
     State (utxow era) ~ UTxOState era,
     Signal (utxow era) ~ TxInBlock era,
-    -- PredicateFailure (utxow era) ~ UtxowPredicateFailure era,
     STS (utxow era),
     ShelleyStyleWitnessNeeds era
   ) =>
