@@ -73,6 +73,10 @@ data IfSupportsMint a b (valF :: TyValueExpected) where
   NoMintSupport :: a -> IfSupportsMint a b 'ExpectAdaOnly
   SupportsMint :: b -> IfSupportsMint a b 'ExpectAnyOutput
 
+--TODO: Better.
+instance Show (IfSupportsMint a b valF) where
+  show _ = "<MINT>"
+
 type family ValueFeature (a :: FeatureSet) where
   ValueFeature ('FeatureSet v _) = v
 
@@ -268,7 +272,7 @@ data ModelTx (era :: FeatureSet) = ModelTx
     _mtxDCert :: ![ModelDCert],
     _mtxWdrl :: !(Map.Map ModelAddress (ModelValue 'ExpectAdaOnly era)),
     _mtxMint :: !(IfSupportsMint () (ModelValue (ValueFeature era) era) (ValueFeature era))
-  }
+  } deriving Show
 
 data ModelBlock era = ModelBlock SlotNo [ModelTx era]
 
@@ -279,7 +283,7 @@ data ModelEpoch era = ModelEpoch [ModelBlock era] ModelBlocksMade
 data ModelDelegation = ModelDelegation
   { _mdDelegator :: !ModelAddress,
     _mdDelegatee :: !ModelAddress
-  }
+  } deriving Show
 
 data ModelPoolParams = ModelPoolParams
   { _mppId :: !ModelAddress,
@@ -288,7 +292,7 @@ data ModelPoolParams = ModelPoolParams
     _mppMargin :: !UnitInterval,
     _mppRAcnt :: !ModelAddress,
     _mppOwners :: ![ModelAddress]
-  }
+  } deriving Show
 
 -- ignores genesis delegation details.
 data ModelDCert
@@ -297,6 +301,7 @@ data ModelDCert
   | ModelDelegate ModelDelegation
   | ModelRegisterPool ModelPoolParams
   | ModelRetirePool ModelAddress EpochNo
+ deriving Show
 
 -- TODO: | ModelMIRCert Shelley.MIRPot (Map.Map ModelAddress DeltaCoin)
 
